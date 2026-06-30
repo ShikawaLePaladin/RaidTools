@@ -124,4 +124,124 @@ function RT.NormRole(role)
     return role or ""
 end
 
+-- Détecte le rôle probable à partir de la classe et de la spé
+function RT3_RoleFromSpec(cls, spec)
+    local c = string.upper(cls  or "")
+    local s = string.lower(spec or "")
+
+    -- Tanks
+    if c == "WARRIOR" and string.find(s, "prot") then return "Tank" end
+    if c == "PALADIN" and string.find(s, "prot") then return "Tank" end
+    if c == "DRUID"   and string.find(s, "feral") and string.find(s, "tank") then return "Tank" end
+
+    -- Heals
+    if c == "PRIEST"  and (string.find(s, "holy") or string.find(s, "disc")) then return "Heal" end
+    if c == "PALADIN" and string.find(s, "holy")  then return "Heal" end
+    if c == "DRUID"   and string.find(s, "resto") then return "Heal" end
+    if c == "SHAMAN"  and string.find(s, "resto") then return "Heal" end
+
+    -- Ranged
+    if c == "HUNTER"  then return "Ranged" end
+    if c == "MAGE"    then return "Ranged" end
+    if c == "WARLOCK" then return "Ranged" end
+    if c == "PRIEST"  and string.find(s, "shadow") then return "Ranged" end
+    if c == "DRUID"   and string.find(s, "balance") then return "Ranged" end
+    if c == "SHAMAN"  and string.find(s, "ele")    then return "Ranged" end
+
+    -- Melee
+    if c == "WARRIOR" then return "Melee" end
+    if c == "ROGUE"   then return "Melee" end
+    if c == "PALADIN" and string.find(s, "retri") then return "Melee" end
+    if c == "DRUID"   and string.find(s, "feral") then return "Melee" end
+    if c == "SHAMAN"  and string.find(s, "enh")   then return "Melee" end
+
+    return nil  -- spé inconnue ou absente
+end
+
+-- ============================================================
+-- Détection de spé via talents + échange entre joueurs
+-- ============================================================
+-- Ordre RÉEL des onglets de talents en 1.12 (indépendant de la langue).
+-- L'index renvoyé par GetTalentTabInfo correspond à cette table.
+RT3_TALENT_SPECS = {
+    WARRIOR = { "Arms",  "Fury",  "Prot"  },
+    PALADIN = { "Holy",  "Prot",  "Retri" },
+    HUNTER  = { "BM",    "MM",    "Surv"  },
+    ROGUE   = { "Assa",  "Combat","Subt"  },
+    PRIEST  = { "Disc",  "Holy",  "Shadow"},
+    SHAMAN  = { "Elem",  "Enh",   "Resto" },
+    MAGE    = { "Arcane","Fire",  "Frost" },
+    WARLOCK = { "Affli", "Demo",  "Destro"},
+    DRUID   = { "Balance","Feral","Resto" },
+}
+
+-- Lit les talents du joueur LOCAL → renvoie classeEN, spec, points.
+-- (En 1.12 on ne peut lire que SES propres talents, pas ceux des autres.)
+function RT3_DetectMySpec()
+    if not GetNumTalentTabs or not GetTalentTabInfo then return nil end
+    local nTabs = GetNumTalentTabs()
+    if not nTabs or nTabs < 1 then return nil end
+    local best, bestPts = 0, -1
+    for t = 1, nTabs do
+        local _, _, pts = GetTalentTabInfo(t)
+        pts = pts or 0
+        if pts > bestPts then bestPts = pts; best = t end
+    end
+    if best < 1 or bestPts <= 0 then return nil end  -- pas de talents → on ne devine pas
+    local _, enCls = UnitClass("player")
+    enCls = string.upper(enCls or "")
+    local map  = RT3_TALENT_SPECS[enCls]
+    local spec = map and map[best] or nil
+    return enCls, spec, bestPts
+end
+
+-- Écrit la spé d'un joueur dans le roster et recalcule son rôle.
+-- class peut être nil → on garde la classe déjà connue.
+function RT3_SetPlayerSpec(name, class, spec)
+    if not name or name == "" then return false end
+    local db = RT.Store.Roster()
+    db[name] = db[name] or {}
+    if class and class ~= "" then
+        local nc = RT.NormClass(class)
+        if nc ~= "" then db[name].class = nc end
+    end
+    if spec and spec ~= "" then
+        db[name].spec = spec
+        if RT3_RoleFromSpec then
+            local role = RT3_RoleFromSpec(db[name].class or class or "", spec)
+            if role then db[name].role = role end
+        end
+    end
+    RT.Store.Notify("roster")
+    return true
+end
+
+-- Diffuse une demande de spé à tout le raid (les joueurs qui ont RT
+-- répondent automatiquement et silencieusement via addon).
+function RT3_RequestSpecsAddon()
+    -- enregistre la sienne tout de suite
+    local cls, spec = RT3_DetectMySpec()
+    local me = UnitName and UnitName("player") or ""
+    if spec and me ~= "" then RT3_SetPlayerSpec(me, cls, spec) end
+    if RT_Sync_Send then RT_Sync_Send("SPECREQ") end
+end
+
+-- Handlers addon-to-addon (Sync.lua est chargé avant ce bloc).
+if RT_Sync_Register then
+    -- Quelqu'un demande les spés → on répond avec la nôtre (ciblé).
+    RT_Sync_Register("SPECREQ", function(sender)
+        local cls, spec = RT3_DetectMySpec()
+        local me = UnitName and UnitName("player") or ""
+        if spec and me ~= "" and RT_Sync_Whisper then
+            RT_Sync_Whisper(sender, "SPEC", me, cls or "", spec)
+        end
+    end)
+    -- On reçoit la spé d'un joueur → on l'enregistre.
+    RT_Sync_Register("SPEC", function(sender, pname, pclass, pspec)
+        if pname and pname ~= "" and pspec and pspec ~= "" then
+            RT3_SetPlayerSpec(pname, pclass, pspec)
+        end
+    end)
+end
+
 RT_V3_COMPAT_LOADED = true

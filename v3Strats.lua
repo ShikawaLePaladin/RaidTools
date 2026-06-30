@@ -27,7 +27,7 @@ end
 RT.Modules.Register({
     id       = "strats",
     title    = "Strats",
-    tip      = "Tactiques des boss (recherche par nom). Le WhisperBot peut les envoyer avec ?strat <boss>.",
+    tip      = "Boss tactics (search by name). The WhisperBot can send them with ?strat <boss>.",
     color    = { 0.60, 0.90, 1.00 },
     tabWidth = 64,
 
@@ -43,7 +43,7 @@ RT.Modules.Register({
 
         -- ── Gauche : recherche + liste des boss ──
         RT.UI.Label(panel, {
-            text = "Rechercher :", font = "GameFontDisable",
+            text = "Search:", font = "GameFontDisable",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -36 },
         })
         local search = CreateFrame("EditBox", "RT3_StratsSearch", panel, "InputBoxTemplate")
@@ -157,7 +157,7 @@ RT.Modules.Register({
             anchor = { "BOTTOMLEFT", panel, "BOTTOMLEFT", 318, 8 },
             onClick = function()
                 if panel._selected and RT_Tactics then RT_Tactics.Post(panel._selected.boss, "RAID")
-                else RT.Print("|cffFFAA00Sélectionne un boss d'abord.|r") end
+                else RT.Print("|cffFFAA00Select a boss first.|r") end
             end,
         })
         RT.UI.Button(panel, {
@@ -165,7 +165,7 @@ RT.Modules.Register({
             anchor = { "BOTTOMLEFT", panel, "BOTTOMLEFT", 434, 8 },
             onClick = function()
                 if panel._selected and RT_Tactics then RT_Tactics.Post(panel._selected.boss, "PARTY")
-                else RT.Print("|cffFFAA00Sélectionne un boss d'abord.|r") end
+                else RT.Print("|cffFFAA00Select a boss first.|r") end
             end,
         })
     end,

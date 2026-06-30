@@ -57,7 +57,7 @@ RT.Modules.Register({
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text = "|cff69CCF0Loot & SR+|r  —  trié par points Soft Reserve",
+            text = "|cff69CCF0Loot & SR+|r  —  sorted by Soft Reserve points",
             font = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
@@ -65,7 +65,7 @@ RT.Modules.Register({
         local display   -- forward ref
 
         RT.UI.Label(panel, {
-            text = "Filtre joueur :", font = "GameFontDisable",
+            text = "Player filter:", font = "GameFontDisable",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -36 },
         })
         local search = CreateFrame("EditBox", "RT3_LootSearch", panel, "InputBoxTemplate")

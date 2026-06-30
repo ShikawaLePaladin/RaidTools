@@ -10,7 +10,7 @@
 
 local function fmtAssignment(out)
     if not out then
-        return "|cff888888Aucune attribution calculée.\n\nClique sur |cffFFD700Calculer (Guild)|r pour analyser le roster,\nou |cff88CCFFPUG Pack|r pour calculer + annoncer + MP perso.|r"
+        return "|cff888888No assignment computed.\n\nClick |cffFFD700Compute|r to analyze the roster,\nor |cff88CCFFPUG Pack|r to compute + announce + whisper each player.|r"
     end
     local L = {}
     local function add(s) table.insert(L, s) end
@@ -19,7 +19,7 @@ local function fmtAssignment(out)
     add("|cffFF4D4D» TANKS|r")
     local tanks = out.tanks or {}
     if table.getn(tanks) == 0 then
-        add("  |cff888888aucun tank dans le roster|r")
+        add("  |cff888888no tank in the roster|r")
     else
         for i = 1, table.getn(tanks) do
             local mk = out.tankMarkers and out.tankMarkers[i] or ""
@@ -30,7 +30,7 @@ local function fmtAssignment(out)
 
     -- Soins tank
     add(" ")
-    add("|cff33FF33» SOINS TANK|r")
+    add("|cff33FF33» TANK HEALS|r")
     local anyHT = false
     for ti = 1, table.getn(out.healTank or {}) do
         if out.healTank[ti] and out.healTank[ti] ~= "" then
@@ -38,11 +38,11 @@ local function fmtAssignment(out)
             add("  MT" .. ti .. " (" .. (tanks[ti] or "?") .. ")  <-  |cff88FF88" .. out.healTank[ti] .. "|r")
         end
     end
-    if not anyHT then add("  |cff888888aucun soin tank assigné|r") end
+    if not anyHT then add("  |cff888888no tank healer assigned|r") end
 
     -- Soins raid
     if table.getn(out.healRaid or {}) > 0 then
-        add("  |cffAAAAAARaid :|r " .. table.concat(out.healRaid, ", "))
+        add("  |cffAAAAAARaid:|r " .. table.concat(out.healRaid, ", "))
     end
     if out.druidNote and out.druidNote ~= "" then
         add("  |cff66CC66" .. out.druidNote .. "|r")
@@ -62,7 +62,7 @@ local function fmtAssignment(out)
     -- Malédictions (démonistes)
     if table.getn(out.curses or {}) > 0 then
         add(" ")
-        add("|cffAA44FF» MALÉDICTIONS|r |cff666666(1 par démoniste, jamais en même temps)|r")
+        add("|cffAA44FF» CURSES|r |cff666666(1 per warlock, never at the same time)|r")
         for i = 1, table.getn(out.curses) do
             local c = out.curses[i]
             local why = c.why and ("|cff666666  " .. c.why .. "|r") or ""
@@ -79,7 +79,7 @@ end
 RT.Modules.Register({
     id       = "assign",
     title    = "Assign *",
-    tip      = "Le cerveau : calcule tanks/soins/buffs/malédictions. 'Setup Raid' fait tout, 'Annoncer' envoie au /raid.",
+    tip      = "The brain: computes tanks/heals/buffs/curses. 'Setup Raid' does it all, 'Announce' sends to /raid.",
     color    = { 1.00, 0.82, 0.20 },
     tabWidth = 80,
 
@@ -122,7 +122,7 @@ RT.Modules.Register({
         end
 
         RT.UI.Label(panel, {
-            text = "|cffFFD700Attribution intelligente|r  —  analyse le roster et assigne tout",
+            text = "|cffFFD700Smart assignment|r  —  analyzes the roster and assigns everything",
             font = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
@@ -137,7 +137,7 @@ RT.Modules.Register({
             local n = 0
             for _ in pairs(RT.Store.Roster()) do n = n + 1 end
             if n == 0 then
-                RT.Print("|cffFFAA00Roster vide — scanne le raid (onglet Roster) ou importe.|r")
+                RT.Print("|cffFFAA00Empty roster — scan the raid (Roster tab) or import.|r")
                 return
             end
             if fn then fn() end
@@ -160,51 +160,51 @@ RT.Modules.Register({
                 end
                 -- 2. Calcule + applique (sans annoncer) + copie dans Groupes
                 recompute(RT_AA_PackGuild, true)
-                RT.Print("|cff88FF88[RT] Setup terminé — vérifie et clique Annoncer quand prêt.|r")
+                RT.Print("|cff88FF88[RT] Setup done — review and click Announce when ready.|r")
             end,
-            tooltip = "Scan raid → calcul attribution → copie groupes. Ne fait PAS d'annonce.",
+            tooltip = "Scan raid → compute assignment → copy groups. Does NOT announce.",
         })
 
         -- Ligne 1 suite : boutons individuels
         RT.UI.Button(panel, {
-            text = "Calculer", width = 82, height = 24,
+            text = "Compute", width = 82, height = 24,
             color = { 0.20, 0.60, 0.30 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 142, -32 },
             onClick = function() recompute(RT_AA_PackGuild, true) end,
-            tooltip = "Recalcule tanks/soins/buffs/groupes et applique dans Boss.",
+            tooltip = "Recomputes tanks/heals/buffs/groups and applies to Boss.",
         })
         RT.UI.Button(panel, {
-            text = "Annoncer", width = 82, height = 24,
+            text = "Announce", width = 82, height = 24,
             color = { 1.00, 0.75, 0.20 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 228, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_AnnounceAll(RT_AA_LAST)
                 else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
             end,
-            tooltip = "Annonce au /raid la dernière attribution calculée.",
+            tooltip = "Announces the last computed assignment to /raid.",
         })
         RT.UI.Button(panel, {
             text = "PUG Pack", width = 82, height = 24,
             color = { 0.40, 0.70, 1.00 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 314, -32 },
             onClick = function() recompute(RT_AA_PackPUG, true) end,
-            tooltip = "Calcule + copie groupes + annonce + MP perso à chaque joueur (mode PUG).",
+            tooltip = "Compute + copy groups + announce + whisper each player (PUG mode).",
         })
         RT.UI.Button(panel, {
-            text = "MP perso", width = 82, height = 24,
+            text = "Whisper all", width = 82, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_WhisperPersonal(RT_AA_LAST)
                 else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
             end,
-            tooltip = "Envoie à chaque joueur son rôle/groupe/soins en MP.",
+            tooltip = "Whispers each player their role/group/healing.",
         })
 
         -- ── Zone éditable : TANKS + SOINS (attribution manuelle) ──
         local MT_MARK = { "Skull", "Cross", "Square", "Moon" }
         local helpFS = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
         helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -60)
-        helpFS:SetText("|cff888888Clic slot rempli = |cffFFD700sélectionner|r (vert). Clic sur un autre = |cffFFD700échanger|r. Slot vide = saisir un nom. Tanks → MT1 crâne · MT2 croix · MT3 carré · MT4 lune|r")
+        helpFS:SetText("|cff888888Click a filled slot = |cffFFD700select|r (green). Click another = |cffFFD700swap|r. Empty slot = type a name. Tanks → MT1 Skull · MT2 Cross · MT3 Square · MT4 Moon|r")
 
         local tankBoxes, htBoxes, hrBoxes = {}, {}, {}
 
@@ -274,7 +274,7 @@ RT.Modules.Register({
         end
 
         StaticPopupDialogs["RT3_ASSIGN_ENTER"] = {
-            text        = "Entrer un nom de joueur :",
+            text        = "Enter a player name:",
             button1     = "OK",
             button2     = "Annuler",
             hasEditBox  = 1,
@@ -296,7 +296,7 @@ RT.Modules.Register({
         }
 
         tankBoxes = mkBoxes(-78,  "Tanks",  "|cffFF7777", "tanks",    true)
-        htBoxes   = mkBoxes(-102, "S.Tank", "|cff66DD66", "healTank", false)
+        htBoxes   = mkBoxes(-102, "T.Heal", "|cff66DD66", "healTank", false)
         hrBoxes   = mkBoxes(-126, "S.Raid", "|cff66DD66", "healRaid", false)
 
         local function applySlotColor(btn, name)
