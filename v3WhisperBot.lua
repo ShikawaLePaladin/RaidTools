@@ -46,6 +46,17 @@ function WB.specFromText(text)
     return nil
 end
 
+-- Construit la question de spé, adaptée à la classe du joueur si connue
+-- (ex: Warrior -> "Arms, Fury or Prot?"). Sinon question générique.
+function WB.specQuestion(classToken)
+    local cls = string.upper(classToken or "")
+    local specs = RT3_TALENT_SPECS and RT3_TALENT_SPECS[cls]
+    if not specs then
+        return "[RaidTools] What's your spec? Just reply with your spec (e.g. Prot, Resto, Fury, Shadow, Enh...). Thanks!"
+    end
+    return "[RaidTools] What's your spec? (" .. specs[1] .. " / " .. specs[2] .. " / " .. specs[3] .. ") Just reply with one. Thanks!"
+end
+
 -- Envoie un whisper à chaque membre du raid pour demander sa spé.
 -- onlyMissing=true → seulement ceux sans spé connue.
 function WB.askSpecs(onlyMissing)
@@ -62,7 +73,7 @@ function WB.askSpecs(onlyMissing)
     local sent = 0
     local hasRT = RT_SYNC_MEMBERS or {}
     for i = 1, n do
-        local pname = GetRaidRosterInfo(i)
+        local pname, _, _, _, _, classToken = GetRaidRosterInfo(i)
         if pname and pname ~= "" and pname ~= me then
             local known = db[pname] and db[pname].spec
             if hasRT[pname] then
@@ -71,8 +82,10 @@ function WB.askSpecs(onlyMissing)
                 WB.specPending[pname] = true
                 -- envoi étalé (anti-spam / déconnexion) : 0.4s entre chaque
                 local target = pname
+                local cls = classToken or (db[pname] and db[pname].class) or ""
+                local msg = WB.specQuestion(cls)
                 RT.After(sent * 0.4, function()
-                    SendChatMessage(RT_ChatSafe("[RaidTools] What's your spec? Just reply with your spec (e.g. Prot, Resto, Fury, Shadow, Enh...). Thanks!"), "WHISPER", nil, target)
+                    SendChatMessage(RT_ChatSafe(msg), "WHISPER", nil, target)
                 end)
                 sent = sent + 1
             end
