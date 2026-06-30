@@ -81,6 +81,10 @@ function WB.askSpecs(onlyMissing)
     RT.Print("|cff44CCFF[Spec]|r Request: " .. sent .. " whisper(s) sent; RaidTools users reply silently. Answers fill the roster.")
 end
 
+-- Point d'entrée global : appelable depuis le Roster (bouton Auto-roles) ou
+-- tout autre module, même si l'onglet WhisperBot n'a jamais été ouvert.
+function RT3_AskSpecs(onlyMissing) return WB.askSpecs(onlyMissing) end
+
 -- Traite la réponse d'un joueur à qui on a demandé sa spé.
 function WB.handleSpecReply(sender, text)
     WB.specPending[sender] = nil

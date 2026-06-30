@@ -11372,6 +11372,8 @@ end
 
 
 
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -12465,25 +12467,33 @@ RT.Modules.Register({
             text = "Auto-roles", width = 80, height = 22,
             color = { 0.20, 0.65, 0.35 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -384, -8 },
-            tooltip = "Automatically detects each player's role (Tank/Heal/Melee/Ranged) from their spec.",
+            tooltip = "Sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper). Incoming replies fill the role automatically.",
             onClick = function()
                 if not RT3_RoleFromSpec then
                     RT.Print("|cffFF4444RT3_RoleFromSpec not loaded.|r") return
                 end
                 local db = RT.Store.Roster()
-                local changed = 0
+                local changed, missing = 0, 0
                 for name, data in pairs(db) do
-                    local role = RT3_RoleFromSpec(data.class or "", data.spec or "")
-                    if role then
-                        data.role = role
-                        changed = changed + 1
+                    if not data.spec or data.spec == "" then
+                        missing = missing + 1
+                    else
+                        local role = RT3_RoleFromSpec(data.class or "", data.spec or "")
+                        if role then
+                            data.role = role
+                            changed = changed + 1
+                        end
                     end
                 end
-                if changed > 0 then
-                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated.|r")
-                    RT.Store.Notify("roster")
+                if changed > 0 then RT.Store.Notify("roster") end
+                if missing > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
+                    if RT3_AskSpecs then RT3_AskSpecs(true)
+                    else RT.Print("|cffFFAA00(Ouvre l'onglet WhisperBot une fois pour activer la demande de spé.)|r") end
+                elseif changed > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
                 else
-                    RT.Print("|cffFFAA00Auto-roles: no recognized spec in the roster.|r")
+                    RT.Print("|cffFFAA00Auto-roles: roster empty — scan or import the raid first.|r")
                 end
             end,
         })
@@ -15580,6 +15590,10 @@ function WB.askSpecs(onlyMissing)
     end
     RT.Print("|cff44CCFF[Spec]|r Request: " .. sent .. " whisper(s) sent; RaidTools users reply silently. Answers fill the roster.")
 end
+
+-- Point d'entrée global : appelable depuis le Roster (bouton Auto-roles) ou
+-- tout autre module, même si l'onglet WhisperBot n'a jamais été ouvert.
+function RT3_AskSpecs(onlyMissing) return WB.askSpecs(onlyMissing) end
 
 -- Traite la réponse d'un joueur à qui on a demandé sa spé.
 function WB.handleSpecReply(sender, text)
