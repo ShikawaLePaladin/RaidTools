@@ -1,0 +1,22 @@
+## Interface: 11200
+## Title: |cffAA66FFRT|r v2 - Raid Tool Ultimate
+## Notes: Outil complet de gestion de raid - TurtleWoW/OctoWow
+## Author:
+## Version: 2.0-turtle
+## SavedVariables: RT_DB
+
+rt.xml
+Colors.lua
+Config.lua
+BossPresets.lua
+SoftResJSON.lua
+Sync.lua
+AutoAssign.lua
+Overlay.lua
+PullTimer.lua
+CooldownTracker.lua
+AutoInvite.lua
+Tactics.lua
+Attendance.lua
+Dashboard.lua
+rt.lua

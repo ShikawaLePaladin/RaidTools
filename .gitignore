@@ -1,0 +1,30 @@
+# Fichiers de dev Python (rebuild uniquement en local)
+*.py
+__pycache__/
+*.pyc
+
+# Notes de session (internes)
+*.md
+SESSION_SUMMARY.md
+REFACTORING.md
+ROADMAP.md
+
+# Fichiers Claude internes
+.claude/
+
+# Fichiers WoW générés (SavedVariables)
+*.wtf
+WTF/
+
+# Brouillons / exports WeakAura
+palprot_*.txt
+palprot_*.lua
+decode_*.py
+inspect_*.py
+patch_*.py
+TEST_JSON_PARSER.lua
+
+# Dossiers v2/core/modules (non utilisés dans v3)
+core/
+modules/
+ui/
