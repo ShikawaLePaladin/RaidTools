@@ -11370,6 +11370,8 @@ end
 
 
 
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -12121,7 +12123,7 @@ local function fmtStatus()
     -- État du raid
     local nRaid = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     local nParty = (GetNumPartyMembers and GetNumPartyMembers()) or 0
-    add("|cffFFD700» ÉTAT DU RAID|r")
+    add("|cffFFD700» RAID STATUS|r")
     if nRaid > 0 then
         add("  |cff44FF44En raid|r : " .. nRaid .. "/40 membres")
     elseif nParty > 0 then
@@ -12135,7 +12137,7 @@ local function fmtStatus()
     add(" ")
     add("|cffFFD700» ROSTER|r")
     if total == 0 then
-        add("  |cff888888vide — scanne le raid (onglet Roster) ou importe|r")
+        add("  |cff888888empty — scan the raid (Roster tab) or import|r")
     else
         add(string.format("  |cff3399FF%d Tanks|r   |cff33FF33%d Heals|r   |cffFF4D4D%d DPS|r   |cff888888(%d total)|r", t, h, d, total))
     end
@@ -12147,7 +12149,7 @@ local function fmtStatus()
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
-        add("  |cff888888aucun boss sélectionné (onglet Boss v2)|r")
+        add("  |cff888888no boss selected (Boss v2 tab)|r")
     end
 
     -- Résumé de la dernière attribution
@@ -12221,7 +12223,7 @@ RT.Modules.Register({
                 if boss ~= "" and RT_Tactics then RT_Tactics.Post(boss, "RAID")
                 else RT.Print("|cffFFAA00No boss selected.|r") end
             end,
-            tooltip = "Poste la tactique du boss actuel dans le canal raid.",
+            tooltip = "Posts the current boss tactic to the raid channel.",
         })
 
         -- ── Bloc d'état ──
@@ -13098,7 +13100,7 @@ RT.Modules.Register({
         StaticPopupDialogs["RT3_ASSIGN_ENTER"] = {
             text        = "Enter a player name:",
             button1     = "OK",
-            button2     = "Annuler",
+            button2     = "Cancel",
             hasEditBox  = 1,
             OnAccept    = function()
                 local name = getglobal(this:GetParent():GetName().."EditBox"):GetText()
@@ -13186,7 +13188,7 @@ end
 
 local function fmtTactic(t)
     if not t then
-        return "|cff888888Sélectionne un boss à gauche pour voir sa tactique.|r"
+        return "|cff888888Select a boss on the left to see its tactic.|r"
     end
     local L = {}
     table.insert(L, "|cffFFD700" .. (t.boss or "?") .. "|r  |cff888888" .. (t.raid or "") .. "|r")
@@ -14411,7 +14413,7 @@ local MARKERS = {
     { idx=3, name="Diamant",      tc={0.50,0.75,0.00,0.50} },
     { idx=2, name="Cercle",       tc={0.25,0.50,0.00,0.50} },
     { idx=1, name="Etoile",       tc={0.00,0.25,0.00,0.50} },
-    { idx=0, name="Aucun",        tc=nil                    },
+    { idx=0, name="None",         tc=nil                    },
 }
 local PRESET_MARK = {
     Skull=8, Cross=7, Square=6, Moon=5, Triangle=4, Diamond=3, Circle=2, Star=1
@@ -14556,7 +14558,7 @@ RT_TRASH_PRESETS = {
 StaticPopupDialogs["RT3_ADD_TRASH"] = {
     text = "Nom du pack de trash :",
     button1 = "Add",
-    button2 = "Annuler",
+    button2 = "Cancel",
     hasEditBox = 1,
     maxLetters = 40,
     OnShow = function()
@@ -16339,7 +16341,7 @@ do
         if RT and RT.Modules and RT.Modules.Toggle then
             RT.Modules.Toggle()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu non chargé.|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu not loaded.|r")
         end
     end)
 
@@ -16349,8 +16351,8 @@ do
     RTMB:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip:AddLine("|cffFFD700RT — Raid Tool|r")
-        GameTooltip:AddLine("Clic gauche : ouvrir le menu", 1, 1, 1)
-        GameTooltip:AddLine("Glisser : déplacer le bouton", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Left-click: open the menu", 1, 1, 1)
+        GameTooltip:AddLine("Drag: move the button", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     RTMB:SetScript("OnLeave", function() GameTooltip:Hide() end)

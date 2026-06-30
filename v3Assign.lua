@@ -276,7 +276,7 @@ RT.Modules.Register({
         StaticPopupDialogs["RT3_ASSIGN_ENTER"] = {
             text        = "Enter a player name:",
             button1     = "OK",
-            button2     = "Annuler",
+            button2     = "Cancel",
             hasEditBox  = 1,
             OnAccept    = function()
                 local name = getglobal(this:GetParent():GetName().."EditBox"):GetText()

@@ -26,7 +26,7 @@ local function fmtLoot(filter)
     end)
 
     if table.getn(players) == 0 then
-        return "|cff888888Aucun loot enregistré. Importe une feuille SoftRes/loot via l'onglet Import (v2).|r"
+        return "|cff888888No loot recorded. Import a SoftRes/loot sheet via the Import tab (v2).|r"
     end
 
     local L = {}

@@ -13,7 +13,7 @@ end
 
 local function fmtTactic(t)
     if not t then
-        return "|cff888888Sélectionne un boss à gauche pour voir sa tactique.|r"
+        return "|cff888888Select a boss on the left to see its tactic.|r"
     end
     local L = {}
     table.insert(L, "|cffFFD700" .. (t.boss or "?") .. "|r  |cff888888" .. (t.raid or "") .. "|r")

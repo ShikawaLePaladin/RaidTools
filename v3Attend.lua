@@ -27,7 +27,7 @@ local function fmtAttendance(filter)
     for boss in pairs(att) do table.insert(bossNames, boss) end
     table.sort(bossNames)
     if table.getn(bossNames) == 0 then
-        return "|cff888888Aucun kill enregistré. Les kills se sauvegardent tout seuls en combat, ou via 'Enregistrer Kill'.|r"
+        return "|cff888888No kill recorded. Kills are saved automatically in combat, or via 'Record Kill'.|r"
     end
     local L = {}
     for bi = 1, table.getn(bossNames) do
@@ -61,7 +61,7 @@ RT.Modules.Register({
         local display   -- forward ref
 
         RT.UI.Button(panel, {
-            text = "Enregistrer Kill", width = 130, height = 22,
+            text = "Record Kill", width = 130, height = 22,
             color = { 0.10, 0.70, 0.20 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function()

@@ -13,7 +13,7 @@ local MARKERS = {
     { idx=3, name="Diamant",      tc={0.50,0.75,0.00,0.50} },
     { idx=2, name="Cercle",       tc={0.25,0.50,0.00,0.50} },
     { idx=1, name="Etoile",       tc={0.00,0.25,0.00,0.50} },
-    { idx=0, name="Aucun",        tc=nil                    },
+    { idx=0, name="None",         tc=nil                    },
 }
 local PRESET_MARK = {
     Skull=8, Cross=7, Square=6, Moon=5, Triangle=4, Diamond=3, Circle=2, Star=1
@@ -158,7 +158,7 @@ RT_TRASH_PRESETS = {
 StaticPopupDialogs["RT3_ADD_TRASH"] = {
     text = "Nom du pack de trash :",
     button1 = "Add",
-    button2 = "Annuler",
+    button2 = "Cancel",
     hasEditBox = 1,
     maxLetters = 40,
     OnShow = function()

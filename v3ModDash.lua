@@ -26,7 +26,7 @@ local function fmtStatus()
     -- État du raid
     local nRaid = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     local nParty = (GetNumPartyMembers and GetNumPartyMembers()) or 0
-    add("|cffFFD700» ÉTAT DU RAID|r")
+    add("|cffFFD700» RAID STATUS|r")
     if nRaid > 0 then
         add("  |cff44FF44En raid|r : " .. nRaid .. "/40 membres")
     elseif nParty > 0 then
@@ -40,7 +40,7 @@ local function fmtStatus()
     add(" ")
     add("|cffFFD700» ROSTER|r")
     if total == 0 then
-        add("  |cff888888vide — scanne le raid (onglet Roster) ou importe|r")
+        add("  |cff888888empty — scan the raid (Roster tab) or import|r")
     else
         add(string.format("  |cff3399FF%d Tanks|r   |cff33FF33%d Heals|r   |cffFF4D4D%d DPS|r   |cff888888(%d total)|r", t, h, d, total))
     end
@@ -52,7 +52,7 @@ local function fmtStatus()
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
-        add("  |cff888888aucun boss sélectionné (onglet Boss v2)|r")
+        add("  |cff888888no boss selected (Boss v2 tab)|r")
     end
 
     -- Résumé de la dernière attribution
@@ -126,7 +126,7 @@ RT.Modules.Register({
                 if boss ~= "" and RT_Tactics then RT_Tactics.Post(boss, "RAID")
                 else RT.Print("|cffFFAA00No boss selected.|r") end
             end,
-            tooltip = "Poste la tactique du boss actuel dans le canal raid.",
+            tooltip = "Posts the current boss tactic to the raid channel.",
         })
 
         -- ── Bloc d'état ──
