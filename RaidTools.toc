@@ -1,8 +1,8 @@
 ## Interface: 11200
-## Title: |cffAA66FFRT|r v2 - Raid Tool Ultimate
-## Notes: Outil complet de gestion de raid - TurtleWoW/OctoWow
-## Author:
-## Version: 2.0-turtle
+## Title: |cffAA66FFRaidTools|r
+## Notes: Full raid management — roster, auto-roles, LFM, boss assignments, group optimiser (OctoWow / TurtleWoW 1.12)
+## Author: ShikawaLePaladin
+## Version: 3.0.1
 ## SavedVariables: RT_DB
 
 rt.xml
