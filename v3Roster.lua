@@ -62,7 +62,7 @@ local function scanRaid(prune)
     local db = RT.Store.Roster()
     local n = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     if n == 0 then
-        if prune then RT.Print("|cffFFAA00Tu n'es pas dans un raid.|r") end
+        if prune then RT.Print("|cffFFAA00You're not in a raid.|r") end
         return
     end
     local present = {}
@@ -84,9 +84,9 @@ local function scanRaid(prune)
         end
         for i = 1, table.getn(toRemove) do db[toRemove[i]] = nil end
         removed = table.getn(toRemove)
-        RT.Print("Scan : " .. n .. " présent(s), " .. added .. " nouveau(x), " .. removed .. " retiré(s).")
+        RT.Print("Scan: " .. n .. " present, " .. added .. " new, " .. removed .. " removed.")
     elseif added > 0 then
-        RT.Print("Scan : " .. added .. " joueur(s) ajouté(s) depuis le raid.")
+        RT.Print("Scan: " .. added .. " player(s) added from the raid.")
     end
     RT.Store.Notify("roster")
 end
@@ -147,14 +147,14 @@ local function fillDemoRoster()
         local d = demo[i]
         db[d[1]] = { class=d[2], spec=d[3], role=d[4], sr=0 }
     end
-    RT.Print("|cff44FF88Roster démo : " .. table.getn(demo) .. " joueurs fictifs ajoutés.|r")
+    RT.Print("|cff44FF88Demo roster: " .. table.getn(demo) .. " fake players added.|r")
     RT.Store.Notify("roster")
 end
 
 RT.Modules.Register({
     id       = "roster",
     title    = "Roster",
-    tip      = "Les joueurs du raid. Importe (raidres), scanne le raid, règle rôle/spec d'un clic. 'Démo' pour tester.",
+    tip      = "Your raid members. Import (raidres), scan the raid, set role/spec in one click. 'Demo' to test.",
     color    = { 0.60, 0.85, 1.00 },
     tabWidth = 72,
 
@@ -166,14 +166,14 @@ RT.Modules.Register({
         })
 
         RT.UI.Button(panel, {
-            text = "Scanner le raid", width = 120, height = 22,
+            text = "Scan raid", width = 120, height = 22,
             color = { 0.40, 1.00, 0.60 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function() scanRaid(true) end,
-            tooltip = "Synchronise le roster avec le raid actuel : ajoute les présents ET retire les absents.",
+            tooltip = "Syncs the roster with the current raid: adds present members AND removes absent ones.",
         })
         RT.UI.Button(panel, {
-            text = "Importer", width = 96, height = 22,
+            text = "Import", width = 96, height = 22,
             color = { 0.30, 0.55, 0.90 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -140, -8 },
             onClick = function()
@@ -182,10 +182,10 @@ RT.Modules.Register({
                     else panel._impPanel:Show(); if panel._impEB then panel._impEB:SetFocus() end end
                 end
             end,
-            tooltip = "Colle un export raidres (CSV) ou softres (JSON) pour remplir le roster.",
+            tooltip = "Paste a raidres (CSV) or softres (JSON) export to fill the roster.",
         })
         RT.UI.Button(panel, {
-            text = "Vider", width = 64, height = 22,
+            text = "Clear", width = 64, height = 22,
             color = { 0.55, 0.15, 0.10 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -244, -8 },
             onClick = function()
@@ -193,17 +193,51 @@ RT.Modules.Register({
                 local names = {}
                 for nm in pairs(db) do table.insert(names, nm) end
                 for i = 1, table.getn(names) do db[names[i]] = nil end
-                RT.Print("Roster vidé.")
+                RT.Print("Roster cleared.")
                 RT.Store.Notify("roster")
             end,
-            tooltip = "Vide entièrement le roster.",
+            tooltip = "Clears the entire roster.",
         })
         RT.UI.Button(panel, {
-            text = "Démo", width = 60, height = 22,
+            text = "Demo", width = 60, height = 22,
             color = { 0.45, 0.30, 0.55 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -316, -8 },
             onClick = fillDemoRoster,
-            tooltip = "TEST : remplit le roster avec un raid fictif de 40 joueurs pour dérouler Assign/Groupes/Boss sans être en raid.",
+            tooltip = "TEST: fills the roster with a fake 40-player raid to try Assign/Groups/Boss without being in a raid.",
+        })
+        RT.UI.Button(panel, {
+            text = "Auto-roles", width = 80, height = 22,
+            color = { 0.20, 0.65, 0.35 },
+            anchor = { "TOPRIGHT", panel, "TOPRIGHT", -384, -8 },
+            tooltip = "Sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper). Incoming replies fill the role automatically.",
+            onClick = function()
+                if not RT3_RoleFromSpec then
+                    RT.Print("|cffFF4444RT3_RoleFromSpec not loaded.|r") return
+                end
+                local db = RT.Store.Roster()
+                local changed, missing = 0, 0
+                for name, data in pairs(db) do
+                    if not data.spec or data.spec == "" then
+                        missing = missing + 1
+                    else
+                        local role = RT3_RoleFromSpec(data.class or "", data.spec or "")
+                        if role then
+                            data.role = role
+                            changed = changed + 1
+                        end
+                    end
+                end
+                if changed > 0 then RT.Store.Notify("roster") end
+                if missing > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
+                    if RT3_AskSpecs then RT3_AskSpecs(true)
+                    else RT.Print("|cffFFAA00(Ouvre l'onglet WhisperBot une fois pour activer la demande de spé.)|r") end
+                elseif changed > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
+                else
+                    RT.Print("|cffFFAA00Auto-roles: roster empty — scan or import the raid first.|r")
+                end
+            end,
         })
 
         -- Barre de recherche + filtres par rôle
@@ -216,7 +250,7 @@ RT.Modules.Register({
 
         local searchLabel = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
         searchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -36)
-        searchLabel:SetText("|cff888888Recherche:|r")
+        searchLabel:SetText("|cff888888Search:|r")
 
         local searchEB = CreateFrame("EditBox", "RT3_RosterSearch", panel, "InputBoxTemplate")
         searchEB:SetPoint("TOPLEFT", panel, "TOPLEFT", 86, -34)
@@ -235,7 +269,7 @@ RT.Modules.Register({
 
         -- Boutons filtres rôle
         local FILT_ROLES = { nil, "Tank", "Heal", "DPS", "Melee", "Ranged" }
-        local FILT_TEXTS = { "Tous", "Tank", "Heal", "DPS", "Melee", "Distance" }
+        local FILT_TEXTS = { "All", "Tank", "Heal", "DPS", "Melee", "Ranged" }
         local filtBtns = {}
         for fi = 1, 6 do
             local fb = RT.UI.Button(panel, {
@@ -266,9 +300,9 @@ RT.Modules.Register({
         if txAll then txAll:SetVertexColor(0.3,0.85,0.3) end
 
         -- En-tête de colonnes (décalés de 24px vers le bas)
-        RT.UI.Label(panel, { text = "Joueur", font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 16, -56 } })
+        RT.UI.Label(panel, { text = "Player", font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 16, -56 } })
         RT.UI.Label(panel, { text = "Spec",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 230, -56 } })
-        RT.UI.Label(panel, { text = "Rôle",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -56 } })
+        RT.UI.Label(panel, { text = "Role",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -56 } })
 
         -- Zone scrollable + liste à pool (décalée de 24px)
         local scroll, child = RT.UI.ScrollArea(panel, {
@@ -306,7 +340,7 @@ RT.Modules.Register({
                     text = "X", width = 20, height = 16,
                     color = { 0.55, 0.15, 0.10 },
                     anchor = { "LEFT", row, "LEFT", 470, 0 },
-                    tooltip = "Retirer ce joueur du roster.",
+                    tooltip = "Remove this player from the roster.",
                 })
                 return row
             end,
@@ -443,7 +477,7 @@ RT.Modules.Register({
         local impTitle = imp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         impTitle:SetPoint("TOPLEFT", imp, "TOPLEFT", 10, -8)
         impTitle:SetWidth(660) impTitle:SetJustifyH("LEFT")
-        impTitle:SetText("|cffFFD700Importer roster|r — colle l'export |cff88CCFFraidres (CSV Attendees)|r ou |cff88CCFFsoftres (JSON)|r, puis clique Importer.  (Ctrl+V pour coller)")
+        impTitle:SetText("|cffFFD700Import roster|r — paste the |cff88CCFFraidres (CSV Attendees)|r or |cff88CCFFsoftres (JSON)|r export, then click Import.  (Ctrl+V to paste)")
 
         -- Fond + zone de collage SCROLLABLE (le ScrollFrame découpe le texte,
         -- sinon une EditBox multiligne déborde par-dessus les boutons).
@@ -488,7 +522,7 @@ RT.Modules.Register({
             local text = eb:GetText() or ""
             local trimmed = string.gsub(text, "^%s+", "")
             if trimmed == "" then
-                impStatus:SetText("|cffFF4444Zone vide — colle d'abord l'export.|r")
+                impStatus:SetText("|cffFF4444Empty box — paste the export first.|r")
                 return
             end
             local first = string.sub(trimmed, 1, 1)
@@ -496,36 +530,36 @@ RT.Modules.Register({
             if first == "{" or first == "[" then fn, label = RT_ImportSoftResJSON, "JSON"
             else fn, label = RT_ImportRosterOnly, "CSV" end
             if not fn then
-                impStatus:SetText("|cffFF4444Parseur " .. label .. " indisponible.|r")
+                impStatus:SetText("|cffFF4444" .. label .. " parser unavailable.|r")
                 return
             end
             -- pcall : un plantage du parseur ne reste pas silencieux
             local pok, a, b = pcall(fn, text)
             if not pok then
-                impStatus:SetText("|cffFF4444Erreur parseur : " .. tostring(a) .. "|r")
-                RT.Print("|cffFF4444[Import] Erreur : " .. tostring(a) .. "|r")
+                impStatus:SetText("|cffFF4444Parser error: " .. tostring(a) .. "|r")
+                RT.Print("|cffFF4444[Import] Error: " .. tostring(a) .. "|r")
                 return
             end
             if a then
-                local msg = "Import " .. label .. " : " .. tostring(b)
+                local msg = "Import " .. label .. ": " .. tostring(b)
                 impStatus:SetText("|cff44FF88" .. msg .. "|r")
                 RT.Print("|cff44FF88[Import] " .. msg .. "|r")
                 eb:SetText("")
                 RT.Store.Notify("roster")
                 imp:Hide()
             else
-                impStatus:SetText("|cffFF4444Échec : " .. tostring(b) .. "|r")
-                RT.Print("|cffFF4444[Import] Échec : " .. tostring(b) .. "|r")
+                impStatus:SetText("|cffFF4444Failed: " .. tostring(b) .. "|r")
+                RT.Print("|cffFF4444[Import] Failed: " .. tostring(b) .. "|r")
             end
         end
 
         RT.UI.Button(imp, {
-            text = "Valider l'import", width = 130, height = 22, color = { 0.30, 0.70, 0.40 },
+            text = "Confirm import", width = 130, height = 22, color = { 0.30, 0.70, 0.40 },
             anchor = { "BOTTOMRIGHT", imp, "BOTTOMRIGHT", -120, 10 },
             onClick = doImport,
         })
         RT.UI.Button(imp, {
-            text = "Annuler", width = 100, height = 22, color = { 0.45, 0.20, 0.20 },
+            text = "Cancel", width = 100, height = 22, color = { 0.45, 0.20, 0.20 },
             anchor = { "BOTTOMRIGHT", imp, "BOTTOMRIGHT", -12, 10 },
             onClick = function() imp:Hide() end,
         })

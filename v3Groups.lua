@@ -3,7 +3,7 @@
 -- Grille compacte, swap par clic, preset dropdown
 -- ============================================================
 
-local GRPLABELS = { "", "[Mixte]", "[Tanks]", "[Heals]", "[DPS]", "[Casters]" }
+local GRPLABELS = { "", "[Mixed]", "[Tanks]", "[Heals]", "[DPS]", "[Casters]" }
 local GRPCC = {
     WARRIOR="C79C6E", PALADIN="F58CBA", HUNTER="ABD473", ROGUE="FFF569",
     PRIEST="FFFFFF", SHAMAN="0070DE", MAGE="40C7EB", WARLOCK="8787ED", DRUID="FF7D0A",
@@ -79,8 +79,8 @@ end
 -- ─────────────────────────────────────────────────────────────
 RT.Modules.Register({
     id       = "groups",
-    title    = "Groupes",
-    tip      = "Les 8 groupes. Clic pour échanger 2 joueurs, 'Import Raid' capture la compo en jeu, 'Appliquer' la réorganise en jeu.",
+    title    = "Groups",
+    tip      = "The 8 groups. Click to swap 2 players, 'Import Raid' captures the in-game setup, 'Apply' reorganizes it in-game.",
     color    = { 0.90, 0.70, 0.20 },
     tabWidth = 74,
 
@@ -203,11 +203,11 @@ RT.Modules.Register({
                 end
                 panel._sel = nil
                 if panel._grpRefresh then panel._grpRefresh() end
-                RT.Print("|cff44FF88"..n.." joueurs importés.|r")
+                RT.Print("|cff44FF88"..n.." players imported.|r")
             end,
         })
         RT.UI.Button(panel, {
-            text="Inviter", width=68, height=22, color={0.15,0.45,0.75},
+            text="Invite", width=68, height=22, color={0.15,0.45,0.75},
             anchor={"TOPLEFT", panel, "TOPLEFT", 272, -10},
             onClick=function()
                 dd:Hide()
@@ -232,9 +232,9 @@ RT.Modules.Register({
             end,
         })
         RT.UI.Button(panel, {
-            text="Appliquer", width=80, height=22, color={0.20,0.45,0.20},
+            text="Apply", width=80, height=22, color={0.20,0.45,0.20},
             anchor={"TOPLEFT", panel, "TOPLEFT", 346, -10},
-            tooltip="Réorganise les groupes RÉELS du raid en jeu selon cette compo (chef/assistant requis).",
+            tooltip="Reorganizes the REAL in-game raid groups to match this setup (raid leader/assistant required).",
             onClick=function()
                 dd:Hide()
                 local n = GetNumRaidMembers and GetNumRaidMembers() or 0
@@ -244,7 +244,7 @@ RT.Modules.Register({
                     canManage = IsRaidLeader() or IsRaidOfficer()
                 end
                 if not canManage then
-                    RT.Print("|cffFFAA00Tu dois être chef ou assistant de raid.|r") return
+                    RT.Print("|cffFFAA00You must be raid leader or assistant.|r") return
                 end
                 local pd = grpPD(); local ap = pd.active or 1
                 if not pd.presets[ap] then return end
@@ -302,11 +302,11 @@ RT.Modules.Register({
                         end
                     end
                 end
-                RT.Print("|cff44FF88"..moves.." déplacement(s) appliqué(s) au raid.|r")
+                RT.Print("|cff44FF88"..moves.." move(s) applied to the raid.|r")
             end,
         })
         RT.UI.Button(panel, {
-            text="Vider", width=52, height=22, color={0.55,0.15,0.10},
+            text="Clear", width=52, height=22, color={0.55,0.15,0.10},
             anchor={"TOPLEFT", panel, "TOPLEFT", 432, -10},
             onClick=function()
                 dd:Hide()
@@ -327,13 +327,13 @@ RT.Modules.Register({
         -- ── Optimiseur de composition basé sur les synergies de buffs ─
         local optSummary = nil  -- FontString pour afficher les buffs par groupe
         RT.UI.Button(panel, {
-            text="Optimiser", width=88, height=22, color={0.60,0.30,0.80},
+            text="Optimize", width=88, height=22, color={0.60,0.30,0.80},
             anchor={"TOPLEFT", panel, "TOPLEFT", 490, -10},
-            tooltip="Répartit automatiquement les joueurs du roster dans les 8 groupes en maximisant les synergies de buffs (Windfury, Mana Tide, auras…).",
+            tooltip="Automatically distributes roster players across the 8 groups, maximizing buff synergies (Windfury, Mana Tide, auras…).",
             onClick=function()
                 dd:Hide()
                 if not RT3_OptimizeGroups then
-                    RT.Print("|cffFF4444v3GroupOpt non chargé.|r") return
+                    RT.Print("|cffFF4444v3GroupOpt not loaded.|r") return
                 end
                 local result = RT3_OptimizeGroups()
                 if not result then
@@ -377,7 +377,7 @@ RT.Modules.Register({
                     end
                     optSummary:SetText(table.concat(lines, "  "))
                 end
-                RT.Print("|cffAA66FF[Optimiser] Groupes calculés et appliqués au preset "..ap..".|r")
+                RT.Print("|cffAA66FF[Optimize] Groups computed and applied to preset "..ap..".|r")
             end,
         })
 
@@ -390,10 +390,10 @@ RT.Modules.Register({
         local saveBtn = CreateFrame("Button","RT3_GPSave",panel,"UIPanelButtonTemplate")
         saveBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -10)
         saveBtn:SetWidth(100) saveBtn:SetHeight(22)
-        saveBtn:SetText("Sauvegarder")
+        saveBtn:SetText("Save")
         saveBtn:SetScript("OnClick", function()
             dd:Hide()
-            RT.Print("|cff44FF88Preset "..grpPD().active.." sauvegardé.|r")
+            RT.Print("|cff44FF88Preset "..grpPD().active.." saved.|r")
         end)
 
         -- Séparateur (décalé sous la ligne de résumé buffs)
@@ -460,7 +460,7 @@ RT.Modules.Register({
                 local skipB = CreateFrame("Button", nil, classPopup, "UIPanelButtonTemplate")
                 skipB:SetWidth(68) skipB:SetHeight(17)
                 skipB:SetPoint("TOPLEFT", classPopup, "TOPLEFT", 6, -42 - skipH)
-                skipB:SetText("Passer")
+                skipB:SetText("Skip")
                 skipB:SetScript("OnClick", function()
                     RT.Store.Notify("roster")
                     for i = 1, table.getn(specBtns) do specBtns[i]:Hide() end
@@ -476,12 +476,12 @@ RT.Modules.Register({
         local cpCancel = CreateFrame("Button", nil, classPopup, "UIPanelButtonTemplate")
         cpCancel:SetWidth(68) cpCancel:SetHeight(17)
         cpCancel:SetPoint("BOTTOMRIGHT", classPopup, "BOTTOMRIGHT", -6, 6)
-        cpCancel:SetText("Annuler")
+        cpCancel:SetText("Cancel")
         cpCancel:SetScript("OnClick", function() classPopup:Hide() end)
 
         local function showClassPopup(name)
             classPopup._name = name
-            cpTitle:SetText("|cffFFD700" .. name .. "|r  —  Choisir la classe :")
+            cpTitle:SetText("|cffFFD700" .. name .. "|r  —  Choose class:")
             for ci = 1, table.getn(cpBtns) do
                 local cls = CLASS_LIST[ci]
                 local col = math.mod(ci-1, 3)

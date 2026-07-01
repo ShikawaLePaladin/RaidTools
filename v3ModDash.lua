@@ -26,11 +26,11 @@ local function fmtStatus()
     -- État du raid
     local nRaid = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     local nParty = (GetNumPartyMembers and GetNumPartyMembers()) or 0
-    add("|cffFFD700» ÉTAT DU RAID|r")
+    add("|cffFFD700» RAID STATUS|r")
     if nRaid > 0 then
         add("  |cff44FF44En raid|r : " .. nRaid .. "/40 membres")
     elseif nParty > 0 then
-        add("  |cffFFAA00En groupe|r : " .. (nParty + 1) .. "/5")
+        add("  |cffFFAA00In party|r: " .. (nParty + 1) .. "/5")
     else
         add("  |cff888888Solo (pas en raid)|r")
     end
@@ -40,7 +40,7 @@ local function fmtStatus()
     add(" ")
     add("|cffFFD700» ROSTER|r")
     if total == 0 then
-        add("  |cff888888vide — scanne le raid (onglet Roster) ou importe|r")
+        add("  |cff888888empty — scan the raid (Roster tab) or import|r")
     else
         add(string.format("  |cff3399FF%d Tanks|r   |cff33FF33%d Heals|r   |cffFF4D4D%d DPS|r   |cff888888(%d total)|r", t, h, d, total))
     end
@@ -52,7 +52,7 @@ local function fmtStatus()
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
-        add("  |cff888888aucun boss sélectionné (onglet Boss v2)|r")
+        add("  |cff888888no boss selected (Boss v2 tab)|r")
     end
 
     -- Résumé de la dernière attribution
@@ -77,20 +77,20 @@ end
 RT.Modules.Register({
     id       = "dash",
     title    = "Dashboard",
-    tip      = "Vue d'ensemble du raid : effectifs, état, raccourcis. Le point de départ.",
+    tip      = "Raid overview: headcount, status, shortcuts. The starting point.",
     color    = { 0.70, 0.55, 1.00 },
     tabWidth = 90,
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text = "|cffAA66FFCommand Center|r  —  ton raid en un coup d'œil",
+            text = "|cffAA66FFCommand Center|r  —  your raid at a glance",
             font = "GameFontNormalLarge",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
 
         -- ── Actions rapides ──
         RT.UI.Button(panel, {
-            text = "Calculer (Guild)", width = 140, height = 24,
+            text = "Compute (Guild)", width = 140, height = 24,
             color = { 0.40, 1.00, 0.60 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -40 },
             onClick = function()
@@ -107,7 +107,7 @@ RT.Modules.Register({
                 if RT_AA_PackPUG then RT_AA_PackPUG() end
                 if panel._status then panel._status:SetText(fmtStatus()) end
             end,
-            tooltip = "Calcule + annonce au raid + envoie l'attrib perso en MP à chacun.",
+            tooltip = "Compute + announce to raid + whisper each player their assignment.",
         })
         RT.UI.Button(panel, {
             text = "Pull 10s", width = 100, height = 24,
@@ -116,17 +116,17 @@ RT.Modules.Register({
             onClick = function()
                 if RT_PT then RT_PT.Start(10, nil, true) end
             end,
-            tooltip = "Lance un compte à rebours de pull de 10s, visible par tout le raid.",
+            tooltip = "Starts a 10s pull countdown, visible to the whole raid.",
         })
         RT.UI.Button(panel, {
-            text = "Annoncer strat", width = 120, height = 24,
+            text = "Announce strat", width = 120, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 390, -40 },
             onClick = function()
                 local boss = RT_BOSS_STATE and RT_BOSS_STATE.bossName or ""
                 if boss ~= "" and RT_Tactics then RT_Tactics.Post(boss, "RAID")
-                else RT.Print("|cffFFAA00Aucun boss sélectionné.|r") end
+                else RT.Print("|cffFFAA00No boss selected.|r") end
             end,
-            tooltip = "Poste la tactique du boss actuel dans le canal raid.",
+            tooltip = "Posts the current boss tactic to the raid channel.",
         })
 
         -- ── Bloc d'état ──

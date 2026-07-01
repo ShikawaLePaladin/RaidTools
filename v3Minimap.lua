@@ -53,7 +53,7 @@ do
         if RT and RT.Modules and RT.Modules.Toggle then
             RT.Modules.Toggle()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu non chargé.|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu not loaded.|r")
         end
     end)
 
@@ -63,8 +63,8 @@ do
     RTMB:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip:AddLine("|cffFFD700RT — Raid Tool|r")
-        GameTooltip:AddLine("Clic gauche : ouvrir le menu", 1, 1, 1)
-        GameTooltip:AddLine("Glisser : déplacer le bouton", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Left-click: open the menu", 1, 1, 1)
+        GameTooltip:AddLine("Drag: move the button", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     RTMB:SetScript("OnLeave", function() GameTooltip:Hide() end)

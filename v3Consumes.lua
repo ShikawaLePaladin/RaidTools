@@ -20,20 +20,20 @@ end
 
 RT.Modules.Register({
     id       = "consomes",
-    title    = "Consomes",
-    tip      = "Consommables recommandés par rôle (flacons, potions, élixirs) à rappeler au raid.",
+    title    = "Consumes",
+    tip      = "Recommended consumables per role (flasks, potions, elixirs) to remind the raid.",
     color    = { 0.60, 1.00, 0.40 },
     tabWidth = 80,
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text   = "|cff99FF44Consommables|r - checklist par joueur du raid",
+            text   = "|cff99FF44Consumables|r - checklist per raid player",
             font   = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
 
         RT.UI.Button(panel, {
-            text = "Reset Coches", width = 100, height = 22, color = { 0.55, 0.20, 0.10 },
+            text = "Reset checks", width = 100, height = 22, color = { 0.55, 0.20, 0.10 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function()
                 _cData = {}
@@ -67,10 +67,10 @@ RT.Modules.Register({
 
         -- Column headers
         local hdrs = {
-            { COL_NAME,  "Joueur",  120 },
+            { COL_NAME,  "Player",  120 },
             { COL_FLASK, "Flask/Eli", 100 },
-            { COL_FOOD,  "Nourriture", 100 },
-            { COL_PRET,  "Pret", 80 },
+            { COL_FOOD,  "Food", 100 },
+            { COL_PRET,  "Ready", 80 },
         }
         for i = 1, table.getn(hdrs) do
             local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")

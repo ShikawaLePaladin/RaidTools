@@ -96,12 +96,12 @@ function RT.Modules.BuildShell()
 
     local stTitle = settPanel:CreateFontString(nil,"OVERLAY","GameFontNormal")
     stTitle:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -8)
-    stTitle:SetText("|cffFFD700Parametres|r")
+    stTitle:SetText("|cffFFD700Settings|r")
 
     -- Tooltips
     local stTipLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stTipLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -28)
-    stTipLbl:SetText("Infobulles :")
+    stTipLbl:SetText("Tooltips:")
     local stTipBtn = RT.UI.Button(settPanel, {
         text="ON", width=48, height=18,
         anchor={"TOPLEFT", settPanel, "TOPLEFT", 90, -28},
@@ -126,10 +126,10 @@ function RT.Modules.BuildShell()
     -- Langue (placeholder)
     local stLangLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stLangLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -52)
-    stLangLbl:SetText("Langue :")
+    stLangLbl:SetText("Language:")
     local stLangInfo = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stLangInfo:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 90, -52)
-    stLangInfo:SetText("|cff888888FR / EN — bientot|r")
+    stLangInfo:SetText("|cff888888EN / FR — soon|r")
 
     -- Séparateur WhisperBot
     local stWBsep = settPanel:CreateTexture(nil,"BACKGROUND")
@@ -138,7 +138,7 @@ function RT.Modules.BuildShell()
     stWBsep:SetHeight(1) stWBsep:SetTexture(0.4,0.4,0.6,0.4)
     local stWBLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
     stWBLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -74)
-    stWBLbl:SetText("|cff99AAFFMP Auto (WhisperBot)|r")
+    stWBLbl:SetText("|cff99AAFFAuto whisper (WhisperBot)|r")
 
     local function makeWBField(label, key, y)
         local lbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
@@ -161,12 +161,12 @@ function RT.Modules.BuildShell()
         return eb
     end
 
-    makeWBField("Intro :",   "wp_intro", -90)
-    makeWBField("Role :",    "wp_role",  -110)
-    makeWBField("Groupe :",  "wp_group", -130)
+    makeWBField("Intro:",  "wp_intro", -90)
+    makeWBField("Role:",   "wp_role",  -110)
+    makeWBField("Group:",  "wp_group", -130)
 
     local stClose = RT.UI.Button(settPanel, {
-        text="Fermer", width=68, height=18,
+        text="Close", width=68, height=18,
         anchor={"BOTTOMRIGHT", settPanel, "BOTTOMRIGHT", -6, 6},
     })
     stClose:SetScript("OnClick", function() settPanel:Hide() end)
@@ -180,7 +180,7 @@ function RT.Modules.BuildShell()
         if settPanel:IsShown() then settPanel:Hide()
         else settPanel:Show() end
     end)
-    if RT_AttachSimpleTooltip then RT_AttachSimpleTooltip(gearBtn, "Parametres de l'addon") end
+    if RT_AttachSimpleTooltip then RT_AttachSimpleTooltip(gearBtn, "Addon settings") end
 
     local sep = f:CreateTexture(nil, "ARTWORK")
     sep:SetPoint("TOPLEFT",  f, "TOPLEFT",  12, -38)
@@ -240,7 +240,7 @@ function RT.Modules.Toggle()
             local ok, err = pcall(RT.Modules.Show, id)
             if not ok then RT.Print("|cffFF4444[RT3] Erreur show: " .. tostring(err) .. "|r") end
         else
-            RT.Print("|cffFFAA00[RT3] Aucun module enregistre.|r")
+            RT.Print("|cffFFAA00[RT3] No module registered.|r")
         end
     end
 end

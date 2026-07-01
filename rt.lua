@@ -11352,6 +11352,32 @@ end
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -11477,6 +11503,126 @@ end
 function RT.NormRole(role)
     if RT_NormalizeRole then return RT_NormalizeRole(role or "") end
     return role or ""
+end
+
+-- Détecte le rôle probable à partir de la classe et de la spé
+function RT3_RoleFromSpec(cls, spec)
+    local c = string.upper(cls  or "")
+    local s = string.lower(spec or "")
+
+    -- Tanks
+    if c == "WARRIOR" and string.find(s, "prot") then return "Tank" end
+    if c == "PALADIN" and string.find(s, "prot") then return "Tank" end
+    if c == "DRUID"   and string.find(s, "feral") and string.find(s, "tank") then return "Tank" end
+
+    -- Heals
+    if c == "PRIEST"  and (string.find(s, "holy") or string.find(s, "disc")) then return "Heal" end
+    if c == "PALADIN" and string.find(s, "holy")  then return "Heal" end
+    if c == "DRUID"   and string.find(s, "resto") then return "Heal" end
+    if c == "SHAMAN"  and string.find(s, "resto") then return "Heal" end
+
+    -- Ranged
+    if c == "HUNTER"  then return "Ranged" end
+    if c == "MAGE"    then return "Ranged" end
+    if c == "WARLOCK" then return "Ranged" end
+    if c == "PRIEST"  and string.find(s, "shadow") then return "Ranged" end
+    if c == "DRUID"   and string.find(s, "balance") then return "Ranged" end
+    if c == "SHAMAN"  and string.find(s, "ele")    then return "Ranged" end
+
+    -- Melee
+    if c == "WARRIOR" then return "Melee" end
+    if c == "ROGUE"   then return "Melee" end
+    if c == "PALADIN" and string.find(s, "retri") then return "Melee" end
+    if c == "DRUID"   and string.find(s, "feral") then return "Melee" end
+    if c == "SHAMAN"  and string.find(s, "enh")   then return "Melee" end
+
+    return nil  -- spé inconnue ou absente
+end
+
+-- ============================================================
+-- Détection de spé via talents + échange entre joueurs
+-- ============================================================
+-- Ordre RÉEL des onglets de talents en 1.12 (indépendant de la langue).
+-- L'index renvoyé par GetTalentTabInfo correspond à cette table.
+RT3_TALENT_SPECS = {
+    WARRIOR = { "Arms",  "Fury",  "Prot"  },
+    PALADIN = { "Holy",  "Prot",  "Retri" },
+    HUNTER  = { "BM",    "MM",    "Surv"  },
+    ROGUE   = { "Assa",  "Combat","Subt"  },
+    PRIEST  = { "Disc",  "Holy",  "Shadow"},
+    SHAMAN  = { "Elem",  "Enh",   "Resto" },
+    MAGE    = { "Arcane","Fire",  "Frost" },
+    WARLOCK = { "Affli", "Demo",  "Destro"},
+    DRUID   = { "Balance","Feral","Resto" },
+}
+
+-- Lit les talents du joueur LOCAL → renvoie classeEN, spec, points.
+-- (En 1.12 on ne peut lire que SES propres talents, pas ceux des autres.)
+function RT3_DetectMySpec()
+    if not GetNumTalentTabs or not GetTalentTabInfo then return nil end
+    local nTabs = GetNumTalentTabs()
+    if not nTabs or nTabs < 1 then return nil end
+    local best, bestPts = 0, -1
+    for t = 1, nTabs do
+        local _, _, pts = GetTalentTabInfo(t)
+        pts = pts or 0
+        if pts > bestPts then bestPts = pts; best = t end
+    end
+    if best < 1 or bestPts <= 0 then return nil end  -- pas de talents → on ne devine pas
+    local _, enCls = UnitClass("player")
+    enCls = string.upper(enCls or "")
+    local map  = RT3_TALENT_SPECS[enCls]
+    local spec = map and map[best] or nil
+    return enCls, spec, bestPts
+end
+
+-- Écrit la spé d'un joueur dans le roster et recalcule son rôle.
+-- class peut être nil → on garde la classe déjà connue.
+function RT3_SetPlayerSpec(name, class, spec)
+    if not name or name == "" then return false end
+    local db = RT.Store.Roster()
+    db[name] = db[name] or {}
+    if class and class ~= "" then
+        local nc = RT.NormClass(class)
+        if nc ~= "" then db[name].class = nc end
+    end
+    if spec and spec ~= "" then
+        db[name].spec = spec
+        if RT3_RoleFromSpec then
+            local role = RT3_RoleFromSpec(db[name].class or class or "", spec)
+            if role then db[name].role = role end
+        end
+    end
+    RT.Store.Notify("roster")
+    return true
+end
+
+-- Diffuse une demande de spé à tout le raid (les joueurs qui ont RT
+-- répondent automatiquement et silencieusement via addon).
+function RT3_RequestSpecsAddon()
+    -- enregistre la sienne tout de suite
+    local cls, spec = RT3_DetectMySpec()
+    local me = UnitName and UnitName("player") or ""
+    if spec and me ~= "" then RT3_SetPlayerSpec(me, cls, spec) end
+    if RT_Sync_Send then RT_Sync_Send("SPECREQ") end
+end
+
+-- Handlers addon-to-addon (Sync.lua est chargé avant ce bloc).
+if RT_Sync_Register then
+    -- Quelqu'un demande les spés → on répond avec la nôtre (ciblé).
+    RT_Sync_Register("SPECREQ", function(sender)
+        local cls, spec = RT3_DetectMySpec()
+        local me = UnitName and UnitName("player") or ""
+        if spec and me ~= "" and RT_Sync_Whisper then
+            RT_Sync_Whisper(sender, "SPEC", me, cls or "", spec)
+        end
+    end)
+    -- On reçoit la spé d'un joueur → on l'enregistre.
+    RT_Sync_Register("SPEC", function(sender, pname, pclass, pspec)
+        if pname and pname ~= "" and pspec and pspec ~= "" then
+            RT3_SetPlayerSpec(pname, pclass, pspec)
+        end
+    end)
 end
 
 RT_V3_COMPAT_LOADED = true
@@ -11798,12 +11944,12 @@ function RT.Modules.BuildShell()
 
     local stTitle = settPanel:CreateFontString(nil,"OVERLAY","GameFontNormal")
     stTitle:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -8)
-    stTitle:SetText("|cffFFD700Parametres|r")
+    stTitle:SetText("|cffFFD700Settings|r")
 
     -- Tooltips
     local stTipLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stTipLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -28)
-    stTipLbl:SetText("Infobulles :")
+    stTipLbl:SetText("Tooltips:")
     local stTipBtn = RT.UI.Button(settPanel, {
         text="ON", width=48, height=18,
         anchor={"TOPLEFT", settPanel, "TOPLEFT", 90, -28},
@@ -11828,10 +11974,10 @@ function RT.Modules.BuildShell()
     -- Langue (placeholder)
     local stLangLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stLangLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -52)
-    stLangLbl:SetText("Langue :")
+    stLangLbl:SetText("Language:")
     local stLangInfo = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     stLangInfo:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 90, -52)
-    stLangInfo:SetText("|cff888888FR / EN — bientot|r")
+    stLangInfo:SetText("|cff888888EN / FR — soon|r")
 
     -- Séparateur WhisperBot
     local stWBsep = settPanel:CreateTexture(nil,"BACKGROUND")
@@ -11840,7 +11986,7 @@ function RT.Modules.BuildShell()
     stWBsep:SetHeight(1) stWBsep:SetTexture(0.4,0.4,0.6,0.4)
     local stWBLbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
     stWBLbl:SetPoint("TOPLEFT", settPanel, "TOPLEFT", 10, -74)
-    stWBLbl:SetText("|cff99AAFFMP Auto (WhisperBot)|r")
+    stWBLbl:SetText("|cff99AAFFAuto whisper (WhisperBot)|r")
 
     local function makeWBField(label, key, y)
         local lbl = settPanel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
@@ -11863,12 +12009,12 @@ function RT.Modules.BuildShell()
         return eb
     end
 
-    makeWBField("Intro :",   "wp_intro", -90)
-    makeWBField("Role :",    "wp_role",  -110)
-    makeWBField("Groupe :",  "wp_group", -130)
+    makeWBField("Intro:",  "wp_intro", -90)
+    makeWBField("Role:",   "wp_role",  -110)
+    makeWBField("Group:",  "wp_group", -130)
 
     local stClose = RT.UI.Button(settPanel, {
-        text="Fermer", width=68, height=18,
+        text="Close", width=68, height=18,
         anchor={"BOTTOMRIGHT", settPanel, "BOTTOMRIGHT", -6, 6},
     })
     stClose:SetScript("OnClick", function() settPanel:Hide() end)
@@ -11882,7 +12028,7 @@ function RT.Modules.BuildShell()
         if settPanel:IsShown() then settPanel:Hide()
         else settPanel:Show() end
     end)
-    if RT_AttachSimpleTooltip then RT_AttachSimpleTooltip(gearBtn, "Parametres de l'addon") end
+    if RT_AttachSimpleTooltip then RT_AttachSimpleTooltip(gearBtn, "Addon settings") end
 
     local sep = f:CreateTexture(nil, "ARTWORK")
     sep:SetPoint("TOPLEFT",  f, "TOPLEFT",  12, -38)
@@ -11942,7 +12088,7 @@ function RT.Modules.Toggle()
             local ok, err = pcall(RT.Modules.Show, id)
             if not ok then RT.Print("|cffFF4444[RT3] Erreur show: " .. tostring(err) .. "|r") end
         else
-            RT.Print("|cffFFAA00[RT3] Aucun module enregistre.|r")
+            RT.Print("|cffFFAA00[RT3] No module registered.|r")
         end
     end
 end
@@ -11983,11 +12129,11 @@ local function fmtStatus()
     -- État du raid
     local nRaid = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     local nParty = (GetNumPartyMembers and GetNumPartyMembers()) or 0
-    add("|cffFFD700» ÉTAT DU RAID|r")
+    add("|cffFFD700» RAID STATUS|r")
     if nRaid > 0 then
         add("  |cff44FF44En raid|r : " .. nRaid .. "/40 membres")
     elseif nParty > 0 then
-        add("  |cffFFAA00En groupe|r : " .. (nParty + 1) .. "/5")
+        add("  |cffFFAA00In party|r: " .. (nParty + 1) .. "/5")
     else
         add("  |cff888888Solo (pas en raid)|r")
     end
@@ -11997,7 +12143,7 @@ local function fmtStatus()
     add(" ")
     add("|cffFFD700» ROSTER|r")
     if total == 0 then
-        add("  |cff888888vide — scanne le raid (onglet Roster) ou importe|r")
+        add("  |cff888888empty — scan the raid (Roster tab) or import|r")
     else
         add(string.format("  |cff3399FF%d Tanks|r   |cff33FF33%d Heals|r   |cffFF4D4D%d DPS|r   |cff888888(%d total)|r", t, h, d, total))
     end
@@ -12009,7 +12155,7 @@ local function fmtStatus()
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
-        add("  |cff888888aucun boss sélectionné (onglet Boss v2)|r")
+        add("  |cff888888no boss selected (Boss v2 tab)|r")
     end
 
     -- Résumé de la dernière attribution
@@ -12034,20 +12180,20 @@ end
 RT.Modules.Register({
     id       = "dash",
     title    = "Dashboard",
-    tip      = "Vue d'ensemble du raid : effectifs, état, raccourcis. Le point de départ.",
+    tip      = "Raid overview: headcount, status, shortcuts. The starting point.",
     color    = { 0.70, 0.55, 1.00 },
     tabWidth = 90,
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text = "|cffAA66FFCommand Center|r  —  ton raid en un coup d'œil",
+            text = "|cffAA66FFCommand Center|r  —  your raid at a glance",
             font = "GameFontNormalLarge",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
 
         -- ── Actions rapides ──
         RT.UI.Button(panel, {
-            text = "Calculer (Guild)", width = 140, height = 24,
+            text = "Compute (Guild)", width = 140, height = 24,
             color = { 0.40, 1.00, 0.60 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -40 },
             onClick = function()
@@ -12064,7 +12210,7 @@ RT.Modules.Register({
                 if RT_AA_PackPUG then RT_AA_PackPUG() end
                 if panel._status then panel._status:SetText(fmtStatus()) end
             end,
-            tooltip = "Calcule + annonce au raid + envoie l'attrib perso en MP à chacun.",
+            tooltip = "Compute + announce to raid + whisper each player their assignment.",
         })
         RT.UI.Button(panel, {
             text = "Pull 10s", width = 100, height = 24,
@@ -12073,17 +12219,17 @@ RT.Modules.Register({
             onClick = function()
                 if RT_PT then RT_PT.Start(10, nil, true) end
             end,
-            tooltip = "Lance un compte à rebours de pull de 10s, visible par tout le raid.",
+            tooltip = "Starts a 10s pull countdown, visible to the whole raid.",
         })
         RT.UI.Button(panel, {
-            text = "Annoncer strat", width = 120, height = 24,
+            text = "Announce strat", width = 120, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 390, -40 },
             onClick = function()
                 local boss = RT_BOSS_STATE and RT_BOSS_STATE.bossName or ""
                 if boss ~= "" and RT_Tactics then RT_Tactics.Post(boss, "RAID")
-                else RT.Print("|cffFFAA00Aucun boss sélectionné.|r") end
+                else RT.Print("|cffFFAA00No boss selected.|r") end
             end,
-            tooltip = "Poste la tactique du boss actuel dans le canal raid.",
+            tooltip = "Posts the current boss tactic to the raid channel.",
         })
 
         -- ── Bloc d'état ──
@@ -12178,7 +12324,7 @@ local function scanRaid(prune)
     local db = RT.Store.Roster()
     local n = (GetNumRaidMembers and GetNumRaidMembers()) or 0
     if n == 0 then
-        if prune then RT.Print("|cffFFAA00Tu n'es pas dans un raid.|r") end
+        if prune then RT.Print("|cffFFAA00You're not in a raid.|r") end
         return
     end
     local present = {}
@@ -12200,9 +12346,9 @@ local function scanRaid(prune)
         end
         for i = 1, table.getn(toRemove) do db[toRemove[i]] = nil end
         removed = table.getn(toRemove)
-        RT.Print("Scan : " .. n .. " présent(s), " .. added .. " nouveau(x), " .. removed .. " retiré(s).")
+        RT.Print("Scan: " .. n .. " present, " .. added .. " new, " .. removed .. " removed.")
     elseif added > 0 then
-        RT.Print("Scan : " .. added .. " joueur(s) ajouté(s) depuis le raid.")
+        RT.Print("Scan: " .. added .. " player(s) added from the raid.")
     end
     RT.Store.Notify("roster")
 end
@@ -12263,14 +12409,14 @@ local function fillDemoRoster()
         local d = demo[i]
         db[d[1]] = { class=d[2], spec=d[3], role=d[4], sr=0 }
     end
-    RT.Print("|cff44FF88Roster démo : " .. table.getn(demo) .. " joueurs fictifs ajoutés.|r")
+    RT.Print("|cff44FF88Demo roster: " .. table.getn(demo) .. " fake players added.|r")
     RT.Store.Notify("roster")
 end
 
 RT.Modules.Register({
     id       = "roster",
     title    = "Roster",
-    tip      = "Les joueurs du raid. Importe (raidres), scanne le raid, règle rôle/spec d'un clic. 'Démo' pour tester.",
+    tip      = "Your raid members. Import (raidres), scan the raid, set role/spec in one click. 'Demo' to test.",
     color    = { 0.60, 0.85, 1.00 },
     tabWidth = 72,
 
@@ -12282,14 +12428,14 @@ RT.Modules.Register({
         })
 
         RT.UI.Button(panel, {
-            text = "Scanner le raid", width = 120, height = 22,
+            text = "Scan raid", width = 120, height = 22,
             color = { 0.40, 1.00, 0.60 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function() scanRaid(true) end,
-            tooltip = "Synchronise le roster avec le raid actuel : ajoute les présents ET retire les absents.",
+            tooltip = "Syncs the roster with the current raid: adds present members AND removes absent ones.",
         })
         RT.UI.Button(panel, {
-            text = "Importer", width = 96, height = 22,
+            text = "Import", width = 96, height = 22,
             color = { 0.30, 0.55, 0.90 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -140, -8 },
             onClick = function()
@@ -12298,10 +12444,10 @@ RT.Modules.Register({
                     else panel._impPanel:Show(); if panel._impEB then panel._impEB:SetFocus() end end
                 end
             end,
-            tooltip = "Colle un export raidres (CSV) ou softres (JSON) pour remplir le roster.",
+            tooltip = "Paste a raidres (CSV) or softres (JSON) export to fill the roster.",
         })
         RT.UI.Button(panel, {
-            text = "Vider", width = 64, height = 22,
+            text = "Clear", width = 64, height = 22,
             color = { 0.55, 0.15, 0.10 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -244, -8 },
             onClick = function()
@@ -12309,17 +12455,51 @@ RT.Modules.Register({
                 local names = {}
                 for nm in pairs(db) do table.insert(names, nm) end
                 for i = 1, table.getn(names) do db[names[i]] = nil end
-                RT.Print("Roster vidé.")
+                RT.Print("Roster cleared.")
                 RT.Store.Notify("roster")
             end,
-            tooltip = "Vide entièrement le roster.",
+            tooltip = "Clears the entire roster.",
         })
         RT.UI.Button(panel, {
-            text = "Démo", width = 60, height = 22,
+            text = "Demo", width = 60, height = 22,
             color = { 0.45, 0.30, 0.55 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -316, -8 },
             onClick = fillDemoRoster,
-            tooltip = "TEST : remplit le roster avec un raid fictif de 40 joueurs pour dérouler Assign/Groupes/Boss sans être en raid.",
+            tooltip = "TEST: fills the roster with a fake 40-player raid to try Assign/Groups/Boss without being in a raid.",
+        })
+        RT.UI.Button(panel, {
+            text = "Auto-roles", width = 80, height = 22,
+            color = { 0.20, 0.65, 0.35 },
+            anchor = { "TOPRIGHT", panel, "TOPRIGHT", -384, -8 },
+            tooltip = "Sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper). Incoming replies fill the role automatically.",
+            onClick = function()
+                if not RT3_RoleFromSpec then
+                    RT.Print("|cffFF4444RT3_RoleFromSpec not loaded.|r") return
+                end
+                local db = RT.Store.Roster()
+                local changed, missing = 0, 0
+                for name, data in pairs(db) do
+                    if not data.spec or data.spec == "" then
+                        missing = missing + 1
+                    else
+                        local role = RT3_RoleFromSpec(data.class or "", data.spec or "")
+                        if role then
+                            data.role = role
+                            changed = changed + 1
+                        end
+                    end
+                end
+                if changed > 0 then RT.Store.Notify("roster") end
+                if missing > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
+                    if RT3_AskSpecs then RT3_AskSpecs(true)
+                    else RT.Print("|cffFFAA00(Ouvre l'onglet WhisperBot une fois pour activer la demande de spé.)|r") end
+                elseif changed > 0 then
+                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
+                else
+                    RT.Print("|cffFFAA00Auto-roles: roster empty — scan or import the raid first.|r")
+                end
+            end,
         })
 
         -- Barre de recherche + filtres par rôle
@@ -12332,7 +12512,7 @@ RT.Modules.Register({
 
         local searchLabel = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
         searchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -36)
-        searchLabel:SetText("|cff888888Recherche:|r")
+        searchLabel:SetText("|cff888888Search:|r")
 
         local searchEB = CreateFrame("EditBox", "RT3_RosterSearch", panel, "InputBoxTemplate")
         searchEB:SetPoint("TOPLEFT", panel, "TOPLEFT", 86, -34)
@@ -12351,7 +12531,7 @@ RT.Modules.Register({
 
         -- Boutons filtres rôle
         local FILT_ROLES = { nil, "Tank", "Heal", "DPS", "Melee", "Ranged" }
-        local FILT_TEXTS = { "Tous", "Tank", "Heal", "DPS", "Melee", "Distance" }
+        local FILT_TEXTS = { "All", "Tank", "Heal", "DPS", "Melee", "Ranged" }
         local filtBtns = {}
         for fi = 1, 6 do
             local fb = RT.UI.Button(panel, {
@@ -12382,9 +12562,9 @@ RT.Modules.Register({
         if txAll then txAll:SetVertexColor(0.3,0.85,0.3) end
 
         -- En-tête de colonnes (décalés de 24px vers le bas)
-        RT.UI.Label(panel, { text = "Joueur", font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 16, -56 } })
+        RT.UI.Label(panel, { text = "Player", font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 16, -56 } })
         RT.UI.Label(panel, { text = "Spec",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 230, -56 } })
-        RT.UI.Label(panel, { text = "Rôle",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -56 } })
+        RT.UI.Label(panel, { text = "Role",   font = "GameFontDisable", anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -56 } })
 
         -- Zone scrollable + liste à pool (décalée de 24px)
         local scroll, child = RT.UI.ScrollArea(panel, {
@@ -12422,7 +12602,7 @@ RT.Modules.Register({
                     text = "X", width = 20, height = 16,
                     color = { 0.55, 0.15, 0.10 },
                     anchor = { "LEFT", row, "LEFT", 470, 0 },
-                    tooltip = "Retirer ce joueur du roster.",
+                    tooltip = "Remove this player from the roster.",
                 })
                 return row
             end,
@@ -12559,7 +12739,7 @@ RT.Modules.Register({
         local impTitle = imp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         impTitle:SetPoint("TOPLEFT", imp, "TOPLEFT", 10, -8)
         impTitle:SetWidth(660) impTitle:SetJustifyH("LEFT")
-        impTitle:SetText("|cffFFD700Importer roster|r — colle l'export |cff88CCFFraidres (CSV Attendees)|r ou |cff88CCFFsoftres (JSON)|r, puis clique Importer.  (Ctrl+V pour coller)")
+        impTitle:SetText("|cffFFD700Import roster|r — paste the |cff88CCFFraidres (CSV Attendees)|r or |cff88CCFFsoftres (JSON)|r export, then click Import.  (Ctrl+V to paste)")
 
         -- Fond + zone de collage SCROLLABLE (le ScrollFrame découpe le texte,
         -- sinon une EditBox multiligne déborde par-dessus les boutons).
@@ -12604,7 +12784,7 @@ RT.Modules.Register({
             local text = eb:GetText() or ""
             local trimmed = string.gsub(text, "^%s+", "")
             if trimmed == "" then
-                impStatus:SetText("|cffFF4444Zone vide — colle d'abord l'export.|r")
+                impStatus:SetText("|cffFF4444Empty box — paste the export first.|r")
                 return
             end
             local first = string.sub(trimmed, 1, 1)
@@ -12612,36 +12792,36 @@ RT.Modules.Register({
             if first == "{" or first == "[" then fn, label = RT_ImportSoftResJSON, "JSON"
             else fn, label = RT_ImportRosterOnly, "CSV" end
             if not fn then
-                impStatus:SetText("|cffFF4444Parseur " .. label .. " indisponible.|r")
+                impStatus:SetText("|cffFF4444" .. label .. " parser unavailable.|r")
                 return
             end
             -- pcall : un plantage du parseur ne reste pas silencieux
             local pok, a, b = pcall(fn, text)
             if not pok then
-                impStatus:SetText("|cffFF4444Erreur parseur : " .. tostring(a) .. "|r")
-                RT.Print("|cffFF4444[Import] Erreur : " .. tostring(a) .. "|r")
+                impStatus:SetText("|cffFF4444Parser error: " .. tostring(a) .. "|r")
+                RT.Print("|cffFF4444[Import] Error: " .. tostring(a) .. "|r")
                 return
             end
             if a then
-                local msg = "Import " .. label .. " : " .. tostring(b)
+                local msg = "Import " .. label .. ": " .. tostring(b)
                 impStatus:SetText("|cff44FF88" .. msg .. "|r")
                 RT.Print("|cff44FF88[Import] " .. msg .. "|r")
                 eb:SetText("")
                 RT.Store.Notify("roster")
                 imp:Hide()
             else
-                impStatus:SetText("|cffFF4444Échec : " .. tostring(b) .. "|r")
-                RT.Print("|cffFF4444[Import] Échec : " .. tostring(b) .. "|r")
+                impStatus:SetText("|cffFF4444Failed: " .. tostring(b) .. "|r")
+                RT.Print("|cffFF4444[Import] Failed: " .. tostring(b) .. "|r")
             end
         end
 
         RT.UI.Button(imp, {
-            text = "Valider l'import", width = 130, height = 22, color = { 0.30, 0.70, 0.40 },
+            text = "Confirm import", width = 130, height = 22, color = { 0.30, 0.70, 0.40 },
             anchor = { "BOTTOMRIGHT", imp, "BOTTOMRIGHT", -120, 10 },
             onClick = doImport,
         })
         RT.UI.Button(imp, {
-            text = "Annuler", width = 100, height = 22, color = { 0.45, 0.20, 0.20 },
+            text = "Cancel", width = 100, height = 22, color = { 0.45, 0.20, 0.20 },
             anchor = { "BOTTOMRIGHT", imp, "BOTTOMRIGHT", -12, 10 },
             onClick = function() imp:Hide() end,
         })
@@ -12668,7 +12848,7 @@ RT.Modules.Register({
 
 local function fmtAssignment(out)
     if not out then
-        return "|cff888888Aucune attribution calculée.\n\nClique sur |cffFFD700Calculer (Guild)|r pour analyser le roster,\nou |cff88CCFFPUG Pack|r pour calculer + annoncer + MP perso.|r"
+        return "|cff888888No assignment computed.\n\nClick |cffFFD700Compute|r to analyze the roster,\nor |cff88CCFFPUG Pack|r to compute + announce + whisper each player.|r"
     end
     local L = {}
     local function add(s) table.insert(L, s) end
@@ -12677,7 +12857,7 @@ local function fmtAssignment(out)
     add("|cffFF4D4D» TANKS|r")
     local tanks = out.tanks or {}
     if table.getn(tanks) == 0 then
-        add("  |cff888888aucun tank dans le roster|r")
+        add("  |cff888888no tank in the roster|r")
     else
         for i = 1, table.getn(tanks) do
             local mk = out.tankMarkers and out.tankMarkers[i] or ""
@@ -12688,7 +12868,7 @@ local function fmtAssignment(out)
 
     -- Soins tank
     add(" ")
-    add("|cff33FF33» SOINS TANK|r")
+    add("|cff33FF33» TANK HEALS|r")
     local anyHT = false
     for ti = 1, table.getn(out.healTank or {}) do
         if out.healTank[ti] and out.healTank[ti] ~= "" then
@@ -12696,11 +12876,11 @@ local function fmtAssignment(out)
             add("  MT" .. ti .. " (" .. (tanks[ti] or "?") .. ")  <-  |cff88FF88" .. out.healTank[ti] .. "|r")
         end
     end
-    if not anyHT then add("  |cff888888aucun soin tank assigné|r") end
+    if not anyHT then add("  |cff888888no tank healer assigned|r") end
 
     -- Soins raid
     if table.getn(out.healRaid or {}) > 0 then
-        add("  |cffAAAAAARaid :|r " .. table.concat(out.healRaid, ", "))
+        add("  |cffAAAAAARaid:|r " .. table.concat(out.healRaid, ", "))
     end
     if out.druidNote and out.druidNote ~= "" then
         add("  |cff66CC66" .. out.druidNote .. "|r")
@@ -12720,7 +12900,7 @@ local function fmtAssignment(out)
     -- Malédictions (démonistes)
     if table.getn(out.curses or {}) > 0 then
         add(" ")
-        add("|cffAA44FF» MALÉDICTIONS|r |cff666666(1 par démoniste, jamais en même temps)|r")
+        add("|cffAA44FF» CURSES|r |cff666666(1 per warlock, never at the same time)|r")
         for i = 1, table.getn(out.curses) do
             local c = out.curses[i]
             local why = c.why and ("|cff666666  " .. c.why .. "|r") or ""
@@ -12737,7 +12917,7 @@ end
 RT.Modules.Register({
     id       = "assign",
     title    = "Assign *",
-    tip      = "Le cerveau : calcule tanks/soins/buffs/malédictions. 'Setup Raid' fait tout, 'Annoncer' envoie au /raid.",
+    tip      = "The brain: computes tanks/heals/buffs/curses. 'Setup Raid' does it all, 'Announce' sends to /raid.",
     color    = { 1.00, 0.82, 0.20 },
     tabWidth = 80,
 
@@ -12780,7 +12960,7 @@ RT.Modules.Register({
         end
 
         RT.UI.Label(panel, {
-            text = "|cffFFD700Attribution intelligente|r  —  analyse le roster et assigne tout",
+            text = "|cffFFD700Smart assignment|r  —  analyzes the roster and assigns everything",
             font = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
@@ -12795,7 +12975,7 @@ RT.Modules.Register({
             local n = 0
             for _ in pairs(RT.Store.Roster()) do n = n + 1 end
             if n == 0 then
-                RT.Print("|cffFFAA00Roster vide — scanne le raid (onglet Roster) ou importe.|r")
+                RT.Print("|cffFFAA00Empty roster — scan the raid (Roster tab) or import.|r")
                 return
             end
             if fn then fn() end
@@ -12818,51 +12998,51 @@ RT.Modules.Register({
                 end
                 -- 2. Calcule + applique (sans annoncer) + copie dans Groupes
                 recompute(RT_AA_PackGuild, true)
-                RT.Print("|cff88FF88[RT] Setup terminé — vérifie et clique Annoncer quand prêt.|r")
+                RT.Print("|cff88FF88[RT] Setup done — review and click Announce when ready.|r")
             end,
-            tooltip = "Scan raid → calcul attribution → copie groupes. Ne fait PAS d'annonce.",
+            tooltip = "Scan raid → compute assignment → copy groups. Does NOT announce.",
         })
 
         -- Ligne 1 suite : boutons individuels
         RT.UI.Button(panel, {
-            text = "Calculer", width = 82, height = 24,
+            text = "Compute", width = 82, height = 24,
             color = { 0.20, 0.60, 0.30 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 142, -32 },
             onClick = function() recompute(RT_AA_PackGuild, true) end,
-            tooltip = "Recalcule tanks/soins/buffs/groupes et applique dans Boss.",
+            tooltip = "Recomputes tanks/heals/buffs/groups and applies to Boss.",
         })
         RT.UI.Button(panel, {
-            text = "Annoncer", width = 82, height = 24,
+            text = "Announce", width = 82, height = 24,
             color = { 1.00, 0.75, 0.20 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 228, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_AnnounceAll(RT_AA_LAST)
                 else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
             end,
-            tooltip = "Annonce au /raid la dernière attribution calculée.",
+            tooltip = "Announces the last computed assignment to /raid.",
         })
         RT.UI.Button(panel, {
             text = "PUG Pack", width = 82, height = 24,
             color = { 0.40, 0.70, 1.00 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 314, -32 },
             onClick = function() recompute(RT_AA_PackPUG, true) end,
-            tooltip = "Calcule + copie groupes + annonce + MP perso à chaque joueur (mode PUG).",
+            tooltip = "Compute + copy groups + announce + whisper each player (PUG mode).",
         })
         RT.UI.Button(panel, {
-            text = "MP perso", width = 82, height = 24,
+            text = "Whisper all", width = 82, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_WhisperPersonal(RT_AA_LAST)
                 else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
             end,
-            tooltip = "Envoie à chaque joueur son rôle/groupe/soins en MP.",
+            tooltip = "Whispers each player their role/group/healing.",
         })
 
         -- ── Zone éditable : TANKS + SOINS (attribution manuelle) ──
         local MT_MARK = { "Skull", "Cross", "Square", "Moon" }
         local helpFS = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
         helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -60)
-        helpFS:SetText("|cff888888Clic slot rempli = |cffFFD700sélectionner|r (vert). Clic sur un autre = |cffFFD700échanger|r. Slot vide = saisir un nom. Tanks → MT1 crâne · MT2 croix · MT3 carré · MT4 lune|r")
+        helpFS:SetText("|cff888888Click a filled slot = |cffFFD700select|r (green). Click another = |cffFFD700swap|r. Empty slot = type a name. Tanks → MT1 Skull · MT2 Cross · MT3 Square · MT4 Moon|r")
 
         local tankBoxes, htBoxes, hrBoxes = {}, {}, {}
 
@@ -12932,9 +13112,9 @@ RT.Modules.Register({
         end
 
         StaticPopupDialogs["RT3_ASSIGN_ENTER"] = {
-            text        = "Entrer un nom de joueur :",
+            text        = "Enter a player name:",
             button1     = "OK",
-            button2     = "Annuler",
+            button2     = "Cancel",
             hasEditBox  = 1,
             OnAccept    = function()
                 local name = getglobal(this:GetParent():GetName().."EditBox"):GetText()
@@ -12954,7 +13134,7 @@ RT.Modules.Register({
         }
 
         tankBoxes = mkBoxes(-78,  "Tanks",  "|cffFF7777", "tanks",    true)
-        htBoxes   = mkBoxes(-102, "S.Tank", "|cff66DD66", "healTank", false)
+        htBoxes   = mkBoxes(-102, "T.Heal", "|cff66DD66", "healTank", false)
         hrBoxes   = mkBoxes(-126, "S.Raid", "|cff66DD66", "healRaid", false)
 
         local function applySlotColor(btn, name)
@@ -13022,7 +13202,7 @@ end
 
 local function fmtTactic(t)
     if not t then
-        return "|cff888888Sélectionne un boss à gauche pour voir sa tactique.|r"
+        return "|cff888888Select a boss on the left to see its tactic.|r"
     end
     local L = {}
     table.insert(L, "|cffFFD700" .. (t.boss or "?") .. "|r  |cff888888" .. (t.raid or "") .. "|r")
@@ -13036,7 +13216,7 @@ end
 RT.Modules.Register({
     id       = "strats",
     title    = "Strats",
-    tip      = "Tactiques des boss (recherche par nom). Le WhisperBot peut les envoyer avec ?strat <boss>.",
+    tip      = "Boss tactics (search by name). The WhisperBot can send them with ?strat <boss>.",
     color    = { 0.60, 0.90, 1.00 },
     tabWidth = 64,
 
@@ -13052,7 +13232,7 @@ RT.Modules.Register({
 
         -- ── Gauche : recherche + liste des boss ──
         RT.UI.Label(panel, {
-            text = "Rechercher :", font = "GameFontDisable",
+            text = "Search:", font = "GameFontDisable",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -36 },
         })
         local search = CreateFrame("EditBox", "RT3_StratsSearch", panel, "InputBoxTemplate")
@@ -13166,7 +13346,7 @@ RT.Modules.Register({
             anchor = { "BOTTOMLEFT", panel, "BOTTOMLEFT", 318, 8 },
             onClick = function()
                 if panel._selected and RT_Tactics then RT_Tactics.Post(panel._selected.boss, "RAID")
-                else RT.Print("|cffFFAA00Sélectionne un boss d'abord.|r") end
+                else RT.Print("|cffFFAA00Select a boss first.|r") end
             end,
         })
         RT.UI.Button(panel, {
@@ -13174,7 +13354,7 @@ RT.Modules.Register({
             anchor = { "BOTTOMLEFT", panel, "BOTTOMLEFT", 434, 8 },
             onClick = function()
                 if panel._selected and RT_Tactics then RT_Tactics.Post(panel._selected.boss, "PARTY")
-                else RT.Print("|cffFFAA00Sélectionne un boss d'abord.|r") end
+                else RT.Print("|cffFFAA00Select a boss first.|r") end
             end,
         })
     end,
@@ -13191,7 +13371,7 @@ RT.Modules.Register({
 -- Grille compacte, swap par clic, preset dropdown
 -- ============================================================
 
-local GRPLABELS = { "", "[Mixte]", "[Tanks]", "[Heals]", "[DPS]", "[Casters]" }
+local GRPLABELS = { "", "[Mixed]", "[Tanks]", "[Heals]", "[DPS]", "[Casters]" }
 local GRPCC = {
     WARRIOR="C79C6E", PALADIN="F58CBA", HUNTER="ABD473", ROGUE="FFF569",
     PRIEST="FFFFFF", SHAMAN="0070DE", MAGE="40C7EB", WARLOCK="8787ED", DRUID="FF7D0A",
@@ -13267,8 +13447,8 @@ end
 -- ─────────────────────────────────────────────────────────────
 RT.Modules.Register({
     id       = "groups",
-    title    = "Groupes",
-    tip      = "Les 8 groupes. Clic pour échanger 2 joueurs, 'Import Raid' capture la compo en jeu, 'Appliquer' la réorganise en jeu.",
+    title    = "Groups",
+    tip      = "The 8 groups. Click to swap 2 players, 'Import Raid' captures the in-game setup, 'Apply' reorganizes it in-game.",
     color    = { 0.90, 0.70, 0.20 },
     tabWidth = 74,
 
@@ -13391,11 +13571,11 @@ RT.Modules.Register({
                 end
                 panel._sel = nil
                 if panel._grpRefresh then panel._grpRefresh() end
-                RT.Print("|cff44FF88"..n.." joueurs importés.|r")
+                RT.Print("|cff44FF88"..n.." players imported.|r")
             end,
         })
         RT.UI.Button(panel, {
-            text="Inviter", width=68, height=22, color={0.15,0.45,0.75},
+            text="Invite", width=68, height=22, color={0.15,0.45,0.75},
             anchor={"TOPLEFT", panel, "TOPLEFT", 272, -10},
             onClick=function()
                 dd:Hide()
@@ -13420,9 +13600,9 @@ RT.Modules.Register({
             end,
         })
         RT.UI.Button(panel, {
-            text="Appliquer", width=80, height=22, color={0.20,0.45,0.20},
+            text="Apply", width=80, height=22, color={0.20,0.45,0.20},
             anchor={"TOPLEFT", panel, "TOPLEFT", 346, -10},
-            tooltip="Réorganise les groupes RÉELS du raid en jeu selon cette compo (chef/assistant requis).",
+            tooltip="Reorganizes the REAL in-game raid groups to match this setup (raid leader/assistant required).",
             onClick=function()
                 dd:Hide()
                 local n = GetNumRaidMembers and GetNumRaidMembers() or 0
@@ -13432,7 +13612,7 @@ RT.Modules.Register({
                     canManage = IsRaidLeader() or IsRaidOfficer()
                 end
                 if not canManage then
-                    RT.Print("|cffFFAA00Tu dois être chef ou assistant de raid.|r") return
+                    RT.Print("|cffFFAA00You must be raid leader or assistant.|r") return
                 end
                 local pd = grpPD(); local ap = pd.active or 1
                 if not pd.presets[ap] then return end
@@ -13490,11 +13670,11 @@ RT.Modules.Register({
                         end
                     end
                 end
-                RT.Print("|cff44FF88"..moves.." déplacement(s) appliqué(s) au raid.|r")
+                RT.Print("|cff44FF88"..moves.." move(s) applied to the raid.|r")
             end,
         })
         RT.UI.Button(panel, {
-            text="Vider", width=52, height=22, color={0.55,0.15,0.10},
+            text="Clear", width=52, height=22, color={0.55,0.15,0.10},
             anchor={"TOPLEFT", panel, "TOPLEFT", 432, -10},
             onClick=function()
                 dd:Hide()
@@ -13515,13 +13695,13 @@ RT.Modules.Register({
         -- ── Optimiseur de composition basé sur les synergies de buffs ─
         local optSummary = nil  -- FontString pour afficher les buffs par groupe
         RT.UI.Button(panel, {
-            text="Optimiser", width=88, height=22, color={0.60,0.30,0.80},
+            text="Optimize", width=88, height=22, color={0.60,0.30,0.80},
             anchor={"TOPLEFT", panel, "TOPLEFT", 490, -10},
-            tooltip="Répartit automatiquement les joueurs du roster dans les 8 groupes en maximisant les synergies de buffs (Windfury, Mana Tide, auras…).",
+            tooltip="Automatically distributes roster players across the 8 groups, maximizing buff synergies (Windfury, Mana Tide, auras…).",
             onClick=function()
                 dd:Hide()
                 if not RT3_OptimizeGroups then
-                    RT.Print("|cffFF4444v3GroupOpt non chargé.|r") return
+                    RT.Print("|cffFF4444v3GroupOpt not loaded.|r") return
                 end
                 local result = RT3_OptimizeGroups()
                 if not result then
@@ -13565,7 +13745,7 @@ RT.Modules.Register({
                     end
                     optSummary:SetText(table.concat(lines, "  "))
                 end
-                RT.Print("|cffAA66FF[Optimiser] Groupes calculés et appliqués au preset "..ap..".|r")
+                RT.Print("|cffAA66FF[Optimize] Groups computed and applied to preset "..ap..".|r")
             end,
         })
 
@@ -13578,10 +13758,10 @@ RT.Modules.Register({
         local saveBtn = CreateFrame("Button","RT3_GPSave",panel,"UIPanelButtonTemplate")
         saveBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -10)
         saveBtn:SetWidth(100) saveBtn:SetHeight(22)
-        saveBtn:SetText("Sauvegarder")
+        saveBtn:SetText("Save")
         saveBtn:SetScript("OnClick", function()
             dd:Hide()
-            RT.Print("|cff44FF88Preset "..grpPD().active.." sauvegardé.|r")
+            RT.Print("|cff44FF88Preset "..grpPD().active.." saved.|r")
         end)
 
         -- Séparateur (décalé sous la ligne de résumé buffs)
@@ -13648,7 +13828,7 @@ RT.Modules.Register({
                 local skipB = CreateFrame("Button", nil, classPopup, "UIPanelButtonTemplate")
                 skipB:SetWidth(68) skipB:SetHeight(17)
                 skipB:SetPoint("TOPLEFT", classPopup, "TOPLEFT", 6, -42 - skipH)
-                skipB:SetText("Passer")
+                skipB:SetText("Skip")
                 skipB:SetScript("OnClick", function()
                     RT.Store.Notify("roster")
                     for i = 1, table.getn(specBtns) do specBtns[i]:Hide() end
@@ -13664,12 +13844,12 @@ RT.Modules.Register({
         local cpCancel = CreateFrame("Button", nil, classPopup, "UIPanelButtonTemplate")
         cpCancel:SetWidth(68) cpCancel:SetHeight(17)
         cpCancel:SetPoint("BOTTOMRIGHT", classPopup, "BOTTOMRIGHT", -6, 6)
-        cpCancel:SetText("Annuler")
+        cpCancel:SetText("Cancel")
         cpCancel:SetScript("OnClick", function() classPopup:Hide() end)
 
         local function showClassPopup(name)
             classPopup._name = name
-            cpTitle:SetText("|cffFFD700" .. name .. "|r  —  Choisir la classe :")
+            cpTitle:SetText("|cffFFD700" .. name .. "|r  —  Choose class:")
             for ci = 1, table.getn(cpBtns) do
                 local cls = CLASS_LIST[ci]
                 local col = math.mod(ci-1, 3)
@@ -14247,7 +14427,7 @@ local MARKERS = {
     { idx=3, name="Diamant",      tc={0.50,0.75,0.00,0.50} },
     { idx=2, name="Cercle",       tc={0.25,0.50,0.00,0.50} },
     { idx=1, name="Etoile",       tc={0.00,0.25,0.00,0.50} },
-    { idx=0, name="Aucun",        tc=nil                    },
+    { idx=0, name="None",         tc=nil                    },
 }
 local PRESET_MARK = {
     Skull=8, Cross=7, Square=6, Moon=5, Triangle=4, Diamond=3, Circle=2, Star=1
@@ -14368,31 +14548,31 @@ end
 -- Globale (pas un local de chunk) ; marks suivent l'ordre des MT.
 RT_TRASH_PRESETS = {
     ["Molten Core"] = {
-        { name="Pack Lucifron",      tc=2, marks={"Skull","Cross"},          note="Flamewaker Protector au Skull. Interrompre les soins des Flamewaker." },
-        { name="Core Hounds",        tc=2, marks={"Skull","Cross"},          note="Tuer les chiens groupes (~10s) sinon resurrection." },
-        { name="Firesworn (Garr)",   tc=1, marks={"Skull"},                  note="Explosent a la mort. Tuer a l'ecart du raid." },
+        { name="Pack Lucifron",      tc=2, marks={"Skull","Cross"},          note="Flamewaker Protector on Skull. Interrupt the Flamewakers' heals." },
+        { name="Core Hounds",        tc=2, marks={"Skull","Cross"},          note="Kill the hounds together (~10s) or they resurrect." },
+        { name="Firesworn (Garr)",   tc=1, marks={"Skull"},                  note="Explode on death. Kill away from the raid." },
     },
     ["Blackwing Lair"] = {
-        { name="Suppression Room",   tc=2, marks={"Skull","Cross"},          note="Desamorcer les Suppression Devices. Pull en chaine." },
-        { name="Death Talon Drakonid",tc=2, marks={"Skull","Cross"},         note="Tanks separes. Focus Skull, interrompre." },
+        { name="Suppression Room",   tc=2, marks={"Skull","Cross"},          note="Disarm the Suppression Devices. Chain pulls." },
+        { name="Death Talon Drakonid",tc=2, marks={"Skull","Cross"},         note="Separate tanks. Focus Skull, interrupt." },
     },
     ["Temple of Ahn"] = {
-        { name="Anubisath (entree)", tc=2, marks={"Skull","Cross"},          note="Gros adds. Tank chacun, focus Skull." },
-        { name="Qiraji Champion",    tc=2, marks={"Skull","Cross"},          note="CC les casters si possible. Kill Skull puis Cross." },
+        { name="Anubisath (entrance)",tc=2, marks={"Skull","Cross"},         note="Big adds. Tank each, focus Skull." },
+        { name="Qiraji Champion",    tc=2, marks={"Skull","Cross"},          note="CC casters if possible. Kill Skull then Cross." },
     },
     ["Naxxramas"] = {
-        { name="Aile Araignee",      tc=2, marks={"Skull","Cross"},          note="Web Wrap aleatoire. Focus Skull." },
-        { name="Aile Abomination",   tc=2, marks={"Skull","Cross"},          note="Slimes : eviter la fusion." },
-        { name="Quartier Militaire", tc=3, marks={"Skull","Cross","Square"}, note="Death Knights : interrompre. Gerer les invocations." },
-        { name="Quartier Construction",tc=2, marks={"Skull","Cross"},        note="Patchwork/Stitched : poison. Focus groupe." },
+        { name="Spider Wing",        tc=2, marks={"Skull","Cross"},          note="Random Web Wrap. Focus Skull." },
+        { name="Abomination Wing",   tc=2, marks={"Skull","Cross"},          note="Slimes: avoid merging." },
+        { name="Military Quarter",   tc=3, marks={"Skull","Cross","Square"}, note="Death Knights: interrupt. Manage summons." },
+        { name="Construction Quarter",tc=2, marks={"Skull","Cross"},        note="Patchwork/Stitched: poison. Focus together." },
     },
 }
 
 -- Popup de saisie pour ajouter un pack de trash perso
 StaticPopupDialogs["RT3_ADD_TRASH"] = {
     text = "Nom du pack de trash :",
-    button1 = "Ajouter",
-    button2 = "Annuler",
+    button1 = "Add",
+    button2 = "Cancel",
     hasEditBox = 1,
     maxLetters = 40,
     OnShow = function()
@@ -14419,7 +14599,7 @@ StaticPopupDialogs["RT3_ADD_TRASH"] = {
 RT.Modules.Register({
     id       = "boss",
     title    = "Boss",
-    tip      = "Par boss : tanks + marqueurs de cible, soins par groupe, note tactique. Les packs de trash (orange) sont sous chaque raid.",
+    tip      = "Per boss: tanks + target markers, group healing, tactic note. Trash packs (orange) are under each raid.",
     color    = { 1.00, 0.30, 0.30 },
     tabWidth = 50,
 
@@ -14445,22 +14625,22 @@ RT.Modules.Register({
         local bossTitle = det:CreateFontString(nil,"OVERLAY","GameFontNormal")
         bossTitle:SetPoint("TOPLEFT", det, "TOPLEFT", 8, -8)
         bossTitle:SetWidth(240)
-        bossTitle:SetText("|cff666666— Sélectionne un boss —|r")
+        bossTitle:SetText("|cff666666— Select a boss —|r")
 
         local presetBtn = RT.UI.Button(det, {
-            text="Charger Preset", width=128, height=20, color={0.15,0.35,0.55},
+            text="Load Preset", width=128, height=20, color={0.15,0.35,0.55},
             anchor={"TOPRIGHT", det, "TOPRIGHT", -4, -6},
         })
 
         local trashBtn = RT.UI.Button(det, {
             text="+ Trash", width=62, height=20, color={0.45,0.30,0.10},
             anchor={"TOPRIGHT", det, "TOPRIGHT", -136, -6},
-            tooltip="Ajoute un pack de trash perso au raid de l'entrée sélectionnée.",
+            tooltip="Adds a custom trash pack to the raid of the selected entry.",
         })
         trashBtn:SetScript("OnClick", function()
             local raid = det._current and det._entryRaid and det._entryRaid[det._current]
             if not raid then
-                RT.Print("|cffFFAA00Sélectionne d'abord un boss/trash du raid voulu.|r")
+                RT.Print("|cffFFAA00Select a boss/trash of the desired raid first.|r")
                 return
             end
             det._addTrashRaid = raid
@@ -14735,7 +14915,7 @@ RT.Modules.Register({
                         end
                     end
                     if table.getn(hn)>0 then
-                        SendChatMessage("["..boss.."] Soins tank: "..table.concat(hn," / "), "RAID")
+                        SendChatMessage("["..boss.."] Tank heals: "..table.concat(hn," / "), "RAID")
                     end
                 else
                     local hn = {}
@@ -14966,7 +15146,7 @@ RT.Modules.Register({
             if applyPreset(boss, e) then
                 applyAssignDefault(e)
                 noteEB:SetText(e.note or "")
-                RT.Print("|cff44FF88Preset rechargé: "..boss.."|r")
+                RT.Print("|cff44FF88Preset reloaded: "..boss.."|r")
                 refresh()
             else
                 RT.Print("|cffFF8888Aucun preset pour: "..boss.."|r")
@@ -15098,7 +15278,7 @@ RT.Modules.Register({
             tdb[raid] = tdb[raid] or {}
             table.insert(tdb[raid], name)
             buildBossList()
-            RT.Print("|cff44FF88Trash ajouté à "..raid..": "..name.."|r")
+            RT.Print("|cff44FF88Trash added to "..raid..": "..name.."|r")
         end
 
         panel._detail = det
@@ -15144,20 +15324,20 @@ end
 
 RT.Modules.Register({
     id       = "consomes",
-    title    = "Consomes",
-    tip      = "Consommables recommandés par rôle (flacons, potions, élixirs) à rappeler au raid.",
+    title    = "Consumes",
+    tip      = "Recommended consumables per role (flasks, potions, elixirs) to remind the raid.",
     color    = { 0.60, 1.00, 0.40 },
     tabWidth = 80,
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text   = "|cff99FF44Consommables|r - checklist par joueur du raid",
+            text   = "|cff99FF44Consumables|r - checklist per raid player",
             font   = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
 
         RT.UI.Button(panel, {
-            text = "Reset Coches", width = 100, height = 22, color = { 0.55, 0.20, 0.10 },
+            text = "Reset checks", width = 100, height = 22, color = { 0.55, 0.20, 0.10 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function()
                 _cData = {}
@@ -15191,10 +15371,10 @@ RT.Modules.Register({
 
         -- Column headers
         local hdrs = {
-            { COL_NAME,  "Joueur",  120 },
+            { COL_NAME,  "Player",  120 },
             { COL_FLASK, "Flask/Eli", 100 },
-            { COL_FOOD,  "Nourriture", 100 },
-            { COL_PRET,  "Pret", 80 },
+            { COL_FOOD,  "Food", 100 },
+            { COL_PRET,  "Ready", 80 },
         }
         for i = 1, table.getn(hdrs) do
             local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -15338,15 +15518,199 @@ RT.Modules.Register({
 -- ============================================================
 
 local WB = {
-    log     = {},
-    disp    = nil,   -- FontString log
-    pending = {},    -- { [name] = { step, gear } }
-    roster  = {},    -- { [name] = { role, gear } }
-    counts  = { tank=0, heal=0, dps=0 },
-    cDisp   = nil,   -- FontString compteurs
-    GEAR_RANK  = { pregear=1, phase1=2, phase2=3 },
-    GEAR_LABEL = { pregear="Pre-Gear", phase1="Phase 1", phase2="Phase 2" },
+    log         = {},
+    disp        = nil,   -- FontString log
+    pending     = {},    -- { [name] = { step, gear } }
+    roster      = {},    -- { [name] = { role, gear } }
+    specPending = {},    -- { [name] = true }  joueurs à qui on a demandé leur spé
+    counts      = { tank=0, heal=0, dps=0 },
+    cDisp       = nil,   -- FontString compteurs
+    GEAR_RANK   = { pregear=1, phase1=2, phase2=3 },
+    GEAR_LABEL  = { pregear="Pre-Gear", phase1="Phase 1", phase2="Phase 2" },
 }
+
+-- Tokens reconnus dans une réponse texte → spé canonique (menu RT).
+-- L'ordre compte : on teste du plus spécifique au plus générique.
+WB.SPEC_TOKENS = {
+    {"protection","Prot"}, {"prot","Prot"}, {"tank","Prot"},
+    {"fury","Fury"}, {"furie","Fury"}, {"arms","Arms"}, {"armes","Arms"},
+    {"retri","Retri"}, {"vindi","Retri"}, {"ret","Retri"},
+    {"holy","Holy"}, {"sacre","Holy"}, {"sacré","Holy"},
+    {"disc","Disc"}, {"shadow","Shadow"}, {"ombre","Shadow"},
+    {"resto","Resto"}, {"restau","Resto"}, {"soin","Resto"}, {"heal","Resto"},
+    {"feral","Feral"}, {"farouche","Feral"},
+    {"balance","Balance"}, {"equilibre","Balance"}, {"boomkin","Balance"},
+    {"enha","Enh"}, {"enh","Enh"},
+    {"elem","Elem"}, {"elementaire","Elem"}, {"ele","Elem"},
+    {"fire","Fire"}, {"feu","Fire"}, {"frost","Frost"}, {"givre","Frost"}, {"gel","Frost"},
+    {"arcane","Arcane"},
+    {"affli","Affli"}, {"demono","Demo"}, {"demo","Demo"}, {"destru","Destro"}, {"destro","Destro"},
+    {"combat","Combat"}, {"assa","Assa"}, {"finesse","Assa"}, {"subt","Subt"},
+    {"beast","BM"}, {"bete","BM"}, {"bm","BM"}, {"precision","MM"}, {"marks","MM"}, {"mm","MM"},
+    {"surv","Surv"}, {"survie","Surv"},
+}
+
+-- Devine la spé canonique depuis un texte libre (réponse au whisper).
+function WB.specFromText(text)
+    local s = string.lower(text or "")
+    for i = 1, table.getn(WB.SPEC_TOKENS) do
+        local tok = WB.SPEC_TOKENS[i]
+        if string.find(s, tok[1], 1, true) then return tok[2] end
+    end
+    return nil
+end
+
+-- Construit la question de spé, adaptée à la classe du joueur si connue
+-- (ex: Warrior -> "Arms, Fury or Prot?"). Sinon question générique.
+function WB.specQuestion(classToken)
+    local cls = string.upper(classToken or "")
+    local specs = RT3_TALENT_SPECS and RT3_TALENT_SPECS[cls]
+    if not specs then
+        return "[RaidTools] What's your spec? Just reply with your spec (e.g. Prot, Resto, Fury, Shadow, Enh...). Thanks!"
+    end
+    return "[RaidTools] What's your spec? (" .. specs[1] .. " / " .. specs[2] .. " / " .. specs[3] .. ") Just reply with one. Thanks!"
+end
+
+-- Envoie un whisper à chaque membre du raid pour demander sa spé.
+-- onlyMissing=true → seulement ceux sans spé connue.
+function WB.askSpecs(onlyMissing)
+    -- 1) les joueurs qui ont RT répondent automatiquement (addon)
+    if RT3_RequestSpecsAddon then RT3_RequestSpecsAddon() end
+    -- 2) whisper aux autres
+    local n = GetNumRaidMembers and GetNumRaidMembers() or 0
+    if n == 0 then
+        RT.Print("|cffFFAA00You're not in a raid (RaidTools users' specs still come in).|r")
+        return
+    end
+    local me  = UnitName and UnitName("player") or ""
+    local db  = RT.Store.Roster()
+    local sent = 0
+    local hasRT = RT_SYNC_MEMBERS or {}
+    for i = 1, n do
+        local pname, _, _, _, _, classToken = GetRaidRosterInfo(i)
+        if pname and pname ~= "" and pname ~= me then
+            local known = db[pname] and db[pname].spec
+            if hasRT[pname] then
+                -- déjà RaidTools : répond en silence via addon, pas de whisper
+            elseif not (onlyMissing and known and known ~= "") then
+                WB.specPending[pname] = true
+                -- envoi étalé (anti-spam / déconnexion) : 0.4s entre chaque
+                local target = pname
+                local cls = classToken or (db[pname] and db[pname].class) or ""
+                local msg = WB.specQuestion(cls)
+                RT.After(sent * 0.4, function()
+                    SendChatMessage(RT_ChatSafe(msg), "WHISPER", nil, target)
+                end)
+                sent = sent + 1
+            end
+        end
+    end
+    RT.Print("|cff44CCFF[Spec]|r Request: " .. sent .. " whisper(s) sent; RaidTools users reply silently. Answers fill the roster.")
+end
+
+-- Point d'entrée global : appelable depuis le Roster (bouton Auto-roles) ou
+-- tout autre module, même si l'onglet WhisperBot n'a jamais été ouvert.
+function RT3_AskSpecs(onlyMissing) return WB.askSpecs(onlyMissing) end
+
+-- Traite la réponse d'un joueur à qui on a demandé sa spé.
+function WB.handleSpecReply(sender, text)
+    WB.specPending[sender] = nil
+    local db   = RT.Store.Roster()
+    local cls  = db[sender] and db[sender].class or ""
+    local spec = WB.specFromText(text)
+    if not spec then
+        -- pas de token reconnu : on stocke le texte brut, le rôle est déduit si possible
+        spec = text
+    end
+    if RT3_SetPlayerSpec then RT3_SetPlayerSpec(sender, nil, spec) end
+    local role = (db[sender] and db[sender].role) or "?"
+    SendChatMessage(RT_ChatSafe("Thanks! Spec recorded: " .. spec .. " (" .. role .. ")."), "WHISPER", nil, sender)
+    WB.addLog("|cff44CCFF[Spec]|r " .. sender .. " = " .. spec .. " -> " .. role)
+end
+
+-- ============================================================
+-- LFM (annonce de recrutement) + Compo (annonce de composition)
+-- ============================================================
+WB.LFM_CHANS  = { "SAY", "YELL", "GUILD", "WORLD", "LFG" }
+WB.LFM_LABELS = { SAY="Say", YELL="Yell", GUILD="Guild", WORLD="World", LFG="LFG" }
+
+-- Places encore à pourvoir (max - actuels), jamais négatif.
+function WB.remainingSlots(bd)
+    local s = (bd.recruit and bd.recruit.slots) or {}
+    local function rem(k) local v = (s[k] or 0) - (WB.counts[k] or 0); if v < 0 then v = 0 end; return v end
+    return rem("tank"), rem("heal"), rem("dps")
+end
+
+-- Construit le texte LFM en remplaçant {tank} {heal} {dps}.
+function WB.buildLFMText(bd)
+    local msg = (bd.lfm and bd.lfm.msg) or ""
+    if msg == "" then return "" end
+    local t, h, d = WB.remainingSlots(bd)
+    msg = string.gsub(msg, "{tank}", tostring(t))
+    msg = string.gsub(msg, "{heal}", tostring(h))
+    msg = string.gsub(msg, "{dps}",  tostring(d))
+    return msg
+end
+
+-- Résout (chatType, chanArg) pour SendChatMessage selon le canal choisi.
+function WB.resolveChannel(key)
+    if key == "WORLD" then
+        local idx = GetChannelName and GetChannelName("World") or 0
+        if idx and idx > 0 then return "CHANNEL", idx end
+        return nil
+    elseif key == "LFG" then
+        local idx = GetChannelName and (GetChannelName("LookingForGroup") or GetChannelName("World")) or 0
+        if idx and idx > 0 then return "CHANNEL", idx end
+        return nil
+    elseif key == "GUILD" then
+        return "GUILD", nil
+    elseif key == "YELL" then
+        return "YELL", nil
+    end
+    return "SAY", nil
+end
+
+function WB.postLFM(bd)
+    local text = WB.buildLFMText(bd)
+    if text == "" then
+        RT.Print("|cffFFAA00[LFM] Type your LFM message in the field first.|r")
+        return
+    end
+    local key = (bd.lfm and bd.lfm.channel) or "SAY"
+    local ctype, carg = WB.resolveChannel(key)
+    if not ctype then
+        RT.Print("|cffFF4444[LFM] Channel '" .. (WB.LFM_LABELS[key] or key) .. "' not found (not joined?). Try Say/Yell.|r")
+        return
+    end
+    SendChatMessage(RT_ChatSafe(text), ctype, nil, carg)
+    WB.addLog("|cff66DD66[LFM " .. (WB.LFM_LABELS[key] or key) .. "]|r " .. text)
+end
+
+-- Compte la composition depuis le roster RT.
+function WB.buildCompoText()
+    local db = RT.Store.Roster()
+    local c = { Tank=0, Heal=0, Melee=0, Ranged=0, DPS=0 }
+    local total = 0
+    for _, data in pairs(db) do
+        local r = RT.NormRole(data.role or "DPS")
+        c[r] = (c[r] or 0) + 1
+        total = total + 1
+    end
+    return "Comp: " .. c.Tank .. " Tank, " .. c.Heal .. " Heal, " ..
+           c.Melee .. " Melee, " .. c.Ranged .. " Ranged" ..
+           (c.DPS > 0 and (", " .. c.DPS .. " DPS") or "") ..
+           "  (" .. total .. ")"
+end
+
+-- Annonce la compo dans le chat du raid (ou groupe).
+function WB.announceCompo()
+    local text = WB.buildCompoText()
+    local chan = "SAY"
+    if GetNumRaidMembers and GetNumRaidMembers() > 0 then chan = "RAID"
+    elseif GetNumPartyMembers and GetNumPartyMembers() > 0 then chan = "PARTY" end
+    SendChatMessage(RT_ChatSafe(text), chan, nil, nil)
+    WB.addLog("|cff88CCFF[Comp]|r " .. text)
+end
 
 function WB.getData()
     local db = RT.Store.DB()
@@ -15355,11 +15719,12 @@ function WB.getData()
             enabled    = false,
             autoinvite = false,
             templates  = {
-                loot = "Ton attribution sera annoncee avant le pull.",
-                join = "Bienvenue ! Un instant, je verifie ton dossier.",
-                info = "Tape ?join pour postuler au raid.",
+                loot = "Your loot assignment will be announced before the pull.",
+                join = "Welcome! One moment, I'm checking your application.",
+                info = "Whisper ?join to apply for the raid.",
             },
             recruit = { minGear="phase1", slots={ tank=2, heal=6, dps=22 } },
+            lfm     = { msg="LFM raid - need {tank} tank {heal} heal {dps} dps - /w me", channel="SAY" },
         }
     end
     if db.v3bot.autoinvite == nil then db.v3bot.autoinvite = false end
@@ -15368,6 +15733,28 @@ function WB.getData()
     end
     if not db.v3bot.recruit.slots then
         db.v3bot.recruit.slots = { tank=2, heal=6, dps=22 }
+    end
+    if not db.v3bot.lfm then
+        db.v3bot.lfm = { msg="LFM raid - need {tank} tank {heal} heal {dps} dps - /w me", channel="SAY" }
+    end
+    -- Migration FR → EN : remplace UNIQUEMENT les textes par défaut non
+    -- personnalisés (ceux encore égaux aux anciens défauts français).
+    db.v3bot.templates = db.v3bot.templates or {}
+    local OLD = {
+        loot = "Ton attribution sera annoncee avant le pull.",
+        join = "Bienvenue ! Un instant, je verifie ton dossier.",
+        info = "Tape ?join pour postuler au raid.",
+    }
+    local NEWT = {
+        loot = "Your loot assignment will be announced before the pull.",
+        join = "Welcome! One moment, I'm checking your application.",
+        info = "Whisper ?join to apply for the raid.",
+    }
+    for k, v in pairs(OLD) do
+        if db.v3bot.templates[k] == v then db.v3bot.templates[k] = NEWT[k] end
+    end
+    if db.v3bot.lfm.msg == "LFM raid - besoin {tank} tank {heal} heal {dps} dps - /w moi" then
+        db.v3bot.lfm.msg = "LFM raid - need {tank} tank {heal} heal {dps} dps - /w me"
     end
     return db.v3bot
 end
@@ -15420,8 +15807,8 @@ function WB.recruitStep(sender, cmd, bd)
     if state.step == "waiting_gear" then
         local gear = WB.parseGear(cmd)
         if not gear then
-            SendChatMessage("Je n'ai pas compris. Reponds: pregear / phase1 / phase2", "WHISPER", nil, sender)
-            WB.addLog("|cffAAAAFF[" .. sender .. "]|r " .. cmd .. " -> (gear inconnu)")
+            SendChatMessage("I didn't get that. Reply: pregear / phase1 / phase2", "WHISPER", nil, sender)
+            WB.addLog("|cffAAAAFF[" .. sender .. "]|r " .. cmd .. " -> (unknown gear)")
             return
         end
         local minRank  = WB.GEAR_RANK[rc.minGear or "phase1"] or 2
@@ -15429,13 +15816,13 @@ function WB.recruitStep(sender, cmd, bd)
         if candRank < minRank then
             WB.pending[sender] = nil
             local needed = WB.GEAR_LABEL[rc.minGear or "phase1"] or "Phase 1"
-            SendChatMessage("Desolee ! Gear minimum requis: " .. needed .. ". Continue a progresser !", "WHISPER", nil, sender)
-            WB.addLog("|cffFF4444[REFUSE gear]|r " .. sender .. " (" .. (WB.GEAR_LABEL[gear] or gear) .. ")")
+            SendChatMessage("Sorry! Minimum gear required: " .. needed .. ". Keep gearing up!", "WHISPER", nil, sender)
+            WB.addLog("|cffFF4444[DECLINED gear]|r " .. sender .. " (" .. (WB.GEAR_LABEL[gear] or gear) .. ")")
         else
             WB.pending[sender].step = "waiting_role"
             WB.pending[sender].gear = gear
             local s   = rc.slots or {}
-            local msg = "Gear OK (" .. (WB.GEAR_LABEL[gear] or gear) .. ") ! Quel role ? (tank/heal/dps)" ..
+            local msg = "Gear OK (" .. (WB.GEAR_LABEL[gear] or gear) .. ")! Which role? (tank/heal/dps)" ..
                         "  [Tank " .. WB.counts.tank .. "/" .. (s.tank or 0) ..
                         " Heal " .. WB.counts.heal .. "/" .. (s.heal or 0) ..
                         " DPS "  .. WB.counts.dps  .. "/" .. (s.dps  or 0) .. "]"
@@ -15446,14 +15833,14 @@ function WB.recruitStep(sender, cmd, bd)
     elseif state.step == "waiting_role" then
         if cmd == "?cancel" or cmd == "cancel" or cmd == "annuler" then
             WB.pending[sender] = nil
-            SendChatMessage("Candidature annulee.", "WHISPER", nil, sender)
-            WB.addLog("|cff888888[" .. sender .. "]|r annule")
+            SendChatMessage("Application cancelled.", "WHISPER", nil, sender)
+            WB.addLog("|cff888888[" .. sender .. "]|r cancelled")
             return
         end
         local role = WB.parseRole(cmd)
         if not role then
-            SendChatMessage("Je n'ai pas compris. Reponds: tank / heal / dps", "WHISPER", nil, sender)
-            WB.addLog("|cffAAAAFF[" .. sender .. "]|r " .. cmd .. " -> (role inconnu)")
+            SendChatMessage("I didn't get that. Reply: tank / heal / dps", "WHISPER", nil, sender)
+            WB.addLog("|cffAAAAFF[" .. sender .. "]|r " .. cmd .. " -> (unknown role)")
             return
         end
         local s       = rc.slots or {}
@@ -15467,16 +15854,16 @@ function WB.recruitStep(sender, cmd, bd)
                     table.insert(alts, string.upper(r))
                 end
             end
-            local altStr = table.getn(alts) > 0 and ("  Dispo: " .. table.concat(alts," / ")) or "  Raid complet."
-            SendChatMessage("Places " .. string.upper(role) .. " completes (" .. slotCur .. "/" .. slotMax .. ")." .. altStr, "WHISPER", nil, sender)
-            WB.addLog("|cffFF8844[PLEIN " .. string.upper(role) .. "]|r " .. sender)
+            local altStr = table.getn(alts) > 0 and ("  Open: " .. table.concat(alts," / ")) or "  Raid is full."
+            SendChatMessage(string.upper(role) .. " spots are full (" .. slotCur .. "/" .. slotMax .. ")." .. altStr, "WHISPER", nil, sender)
+            WB.addLog("|cffFF8844[FULL " .. string.upper(role) .. "]|r " .. sender)
         else
             WB.counts[role] = slotCur + 1
             WB.roster[sender] = { role=role, gear=state.gear }
             WB.pending[sender] = nil
             InviteByName(sender)
-            SendChatMessage("Bienvenue ! Accepte en tant que " .. string.upper(role) .. " (" .. (WB.GEAR_LABEL[state.gear] or "?") .. "). Invitation envoyee !", "WHISPER", nil, sender)
-            WB.addLog("|cff44FF88[ACCEPTE " .. string.upper(role) .. "]|r " .. sender)
+            SendChatMessage("Welcome! Accepted as " .. string.upper(role) .. " (" .. (WB.GEAR_LABEL[state.gear] or "?") .. "). Invite sent!", "WHISPER", nil, sender)
+            WB.addLog("|cff44FF88[ACCEPTED " .. string.upper(role) .. "]|r " .. sender)
             WB.updateCounts(bd)
         end
     end
@@ -15487,11 +15874,19 @@ WB.frame = CreateFrame("Frame", "RT3_WBFrame")
 WB.frame:RegisterEvent("CHAT_MSG_WHISPER")
 WB.frame:SetScript("OnEvent", function()
     if event ~= "CHAT_MSG_WHISPER" then return end
-    local bd = WB.getData()
-    if not bd.enabled then return end
 
     local msg    = arg1 or ""
     local sender = arg2 or ""
+
+    -- Réponse à une demande de spé (capturée même si le BOT est OFF)
+    if WB.specPending[sender] then
+        WB.handleSpecReply(sender, msg)
+        return
+    end
+
+    local bd = WB.getData()
+    if not bd.enabled then return end
+
     local cmd    = string.lower(msg)
     cmd = string.gsub(cmd, "^%s+", "")
     cmd = string.gsub(cmd, "%s+$", "")
@@ -15517,21 +15912,21 @@ WB.frame:SetScript("OnEvent", function()
             if type(sr) == "table" then
                 local items = {}
                 for _, v in pairs(sr) do table.insert(items, tostring(v)) end
-                reply = "Tes SR : " .. table.concat(items, ", ")
+                reply = "Your SR: " .. table.concat(items, ", ")
             else
-                reply = "Ton SR : " .. tostring(sr)
+                reply = "Your SR: " .. tostring(sr)
             end
         else
-            reply = "Aucun SR enregistre pour toi."
+            reply = "No SR recorded for you."
         end
     elseif string.find(c2, "^join") or string.find(c2, "^postuler") or string.find(c2, "^recrutement") then
         if bd.autoinvite then
             if WB.roster[sender] then
-                reply = "Tu es deja dans le raid !"
+                reply = "You're already in the raid!"
             else
                 WB.pending[sender] = { step="waiting_gear" }
                 local needed = WB.GEAR_LABEL[bd.recruit and bd.recruit.minGear or "phase1"] or "Phase 1"
-                reply = "Bonjour ! Quel est ton gear ? (pregear / phase1 / phase2)  -  Requis: " .. needed
+                reply = "Hi! What's your gear? (pregear / phase1 / phase2)  -  Required: " .. needed
             end
         else
             reply = bd.templates.join or ""
@@ -15545,11 +15940,13 @@ WB.frame:SetScript("OnEvent", function()
             local pname, rk, sg, lv, cls = GetRaidRosterInfo(i)
             if pname == sender then
                 found = true
-                reply = "Classe: " .. (cls or "?") .. " | Niv: " .. (lv or "?") .. " | Groupe " .. (sg or "?")
+                reply = "Class: " .. (cls or "?") .. " | Lvl: " .. (lv or "?") .. " | Group " .. (sg or "?")
                 break
             end
         end
-        if not found then reply = "Tu n'es pas dans le raid." end
+        if not found then reply = "You're not in the raid." end
+    elseif string.find(c2, "^compo") or string.find(c2, "^comp") then
+        reply = WB.buildCompoText()
     elseif string.find(c2, "^role") then
         local n = GetNumRaidMembers and GetNumRaidMembers() or 0
         local found = false
@@ -15565,11 +15962,11 @@ WB.frame:SetScript("OnEvent", function()
                 elseif c == "PRIEST" then r = "Heal"
                 elseif c == "SHAMAN" then r = "Heal/DPS"
                 end
-                reply = "Role suggere: " .. r .. " (" .. (cls or "?") .. ")"
+                reply = "Suggested role: " .. r .. " (" .. (cls or "?") .. ")"
                 break
             end
         end
-        if not found then reply = "Tu n'es pas dans le raid." end
+        if not found then reply = "You're not in the raid." end
     elseif string.find(c2, "^groupe") or string.find(c2, "^group") then
         -- Cherche dans l'attribution calculée
         local found_g = nil
@@ -15590,14 +15987,14 @@ WB.frame:SetScript("OnEvent", function()
             if pname == sender then raid_g = sg; break end
         end
         if found_g then
-            reply = "Attrib: Groupe " .. found_g
+            reply = "Assigned: Group " .. found_g
             if raid_g and tonumber(raid_g) ~= found_g then
-                reply = reply .. "  (Actuel en jeu: Grp " .. raid_g .. ")"
+                reply = reply .. "  (Currently in-game: Grp " .. raid_g .. ")"
             end
         elseif raid_g then
-            reply = "Groupe " .. raid_g .. "  (aucune attrib calculee)"
+            reply = "Group " .. raid_g .. "  (no assignment computed)"
         else
-            reply = "Tu n'es pas dans le raid."
+            reply = "You're not in the raid."
         end
     elseif string.find(c2, "^mt") or string.find(c2, "^tank") then
         if RT_AA_LAST and RT_AA_LAST.tanks and table.getn(RT_AA_LAST.tanks) > 0 then
@@ -15607,12 +16004,12 @@ WB.frame:SetScript("OnEvent", function()
             end
             reply = table.concat(parts, "  -  ")
         else
-            reply = "Aucun tank assigne (lance Setup Raid d'abord)."
+            reply = "No tank assigned (run Setup Raid first)."
         end
     elseif string.find(c2, "^strat") then
         local boss = string.gsub(c2, "^strat%s*", "")
         if boss == "" then
-            reply = "Usage: ?strat <nom du boss>"
+            reply = "Usage: ?strat <boss name>"
         elseif RT_Tactics and RT_Tactics.FindAll then
             local res = RT_Tactics.FindAll(boss)
             if res and table.getn(res) > 0 then
@@ -15624,10 +16021,10 @@ WB.frame:SetScript("OnEvent", function()
                 didAct = true
                 WB.addLog("|cff44FFFF[" .. sender .. "]|r !strat " .. boss)
             else
-                reply = "Aucune tactique pour: " .. boss
+                reply = "No tactic for: " .. boss
             end
         else
-            reply = "Base de tactiques indisponible."
+            reply = "Tactics database unavailable."
         end
     end
 
@@ -15642,7 +16039,7 @@ end)
 RT.Modules.Register({
     id       = "whisperbot",
     title    = "WhisperBot",
-    tip      = "Recrutement auto par message privé (?join) et réponses aux joueurs (?mt, ?groupe, ?strat). Active BOT + RECRUTEMENT.",
+    tip      = "Pug hub: auto recruitment (?join), multi-channel LFM, one-click spec request, comp announce, and auto replies (?mt ?group ?comp ?strat).",
     color    = { 1.00, 0.80, 0.20 },
     tabWidth = 90,
 
@@ -15666,9 +16063,9 @@ RT.Modules.Register({
         end)
         panel._wbToggle = tBtn
 
-        -- RECRUTEMENT toggle
+        -- RECRUITMENT toggle
         local aiBtn = RT.UI.Button(panel, {
-            text="RECRUTEMENT: OFF", width=148, height=28, color={0.25,0.25,0.55},
+            text="RECRUITMENT: OFF", width=148, height=28, color={0.25,0.25,0.55},
             anchor={"TOPLEFT",panel,"TOPLEFT",118,-10},
         })
         aiBtn:SetScript("OnClick", function()
@@ -15676,34 +16073,87 @@ RT.Modules.Register({
             bd.autoinvite = not bd.autoinvite
             local tex  = aiBtn:GetNormalTexture()
             if bd.autoinvite then
-                aiBtn:SetText("RECRUTEMENT: ON")
+                aiBtn:SetText("RECRUITMENT: ON")
                 if tex then tex:SetVertexColor(0.10,0.55,0.10) end
             else
-                aiBtn:SetText("RECRUTEMENT: OFF")
+                aiBtn:SetText("RECRUITMENT: OFF")
                 if tex then tex:SetVertexColor(0.25,0.25,0.55) end
             end
         end)
         panel._wbAIBtn = aiBtn
 
+        -- Button: ask the whole raid for their spec
+        RT.UI.Button(panel, {
+            text="Request specs", width=126, height=28, color={0.20,0.55,0.75},
+            anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-10},
+            tooltip="Whisper every raid member to ask their spec. Players who have RaidTools answer automatically; replies fill the roster and set the role.",
+            onClick=function() WB.askSpecs(false) end,
+        })
+
         local infoL = panel:CreateFontString(nil,"OVERLAY","GameFontDisable")
         infoL:SetPoint("TOPLEFT",panel,"TOPLEFT",274,-14)
-        infoL:SetText("?join · ?spec · ?role · ?sr · ?loot · ?info · ?strat <boss>")
+        infoL:SetText("?join ?spec ?role ?comp ?sr ?strat")
+
+        -- ── Row 2: announcements (LFM / channel / comp) ────────────
+        RT.UI.Button(panel, {
+            text="Post LFM", width=104, height=22, color={0.20,0.55,0.30},
+            anchor={"TOPLEFT",panel,"TOPLEFT",12,-44},
+            tooltip="Posts your LFM message (field on the right) to the chosen channel. {tank} {heal} {dps} are replaced by the spots still open.",
+            onClick=function() WB.postLFM(WB.getData()) end,
+        })
+        local chanBtn = RT.UI.Button(panel, {
+            text="Channel: Say", width=104, height=22, color={0.30,0.40,0.55},
+            anchor={"TOPLEFT",panel,"TOPLEFT",120,-44},
+            tooltip="LFM broadcast channel: Say / Yell / Guild / World / LFG.",
+        })
+        chanBtn:SetScript("OnClick", function()
+            local bd  = WB.getData()
+            local cur = bd.lfm.channel or "SAY"
+            local idx = 1
+            for i = 1, table.getn(WB.LFM_CHANS) do
+                if WB.LFM_CHANS[i] == cur then idx = i; break end
+            end
+            idx = idx + 1
+            if idx > table.getn(WB.LFM_CHANS) then idx = 1 end
+            bd.lfm.channel = WB.LFM_CHANS[idx]
+            chanBtn:SetText("Channel: " .. (WB.LFM_LABELS[bd.lfm.channel] or bd.lfm.channel))
+        end)
+        panel._wbChanBtn = chanBtn
+
+        RT.UI.Button(panel, {
+            text="Announce comp", width=120, height=22, color={0.25,0.45,0.65},
+            anchor={"TOPLEFT",panel,"TOPLEFT",228,-44},
+            tooltip="Announces the current roster composition (Tank/Heal/Melee/Ranged) in raid chat.",
+            onClick=function() WB.announceCompo() end,
+        })
+
+        -- Champ message LFM
+        local lfmEB = CreateFrame("EditBox","RT3_WB_lfm",panel,"InputBoxTemplate")
+        lfmEB:SetPoint("TOPLEFT",panel,"TOPLEFT",360,-44)
+        lfmEB:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-12,-44)
+        lfmEB:SetHeight(20) lfmEB:SetAutoFocus(false)
+        lfmEB:SetScript("OnEscapePressed", function() lfmEB:ClearFocus() end)
+        lfmEB:SetScript("OnTextChanged", function()
+            local bd = WB.getData()
+            bd.lfm.msg = lfmEB:GetText() or ""
+        end)
+        panel._wbLfmEB = lfmEB
 
         local s1 = panel:CreateTexture(nil,"BACKGROUND")
-        s1:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-44)
-        s1:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-44)
+        s1:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-72)
+        s1:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-72)
         s1:SetHeight(1) s1:SetTexture(0.3,0.3,0.5,0.6)
 
         -- Templates
         local TMPL = {
             {key="loot", label="?loot / ?attrib"},
-            {key="join",  label="?join  (reponse initiale)"},
+            {key="join",  label="?join  (first reply)"},
             {key="info",  label="?info"},
         }
         panel._wbInputs = {}
         for i = 1, table.getn(TMPL) do
             local t  = TMPL[i]
-            local oy = 48 + (i-1)*50
+            local oy = 76 + (i-1)*50
             local lb = panel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
             lb:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-oy)
             lb:SetText("|cff69CCF0" .. t.label .. "|r  :")
@@ -15721,17 +16171,17 @@ RT.Modules.Register({
         end
 
         local s2 = panel:CreateTexture(nil,"BACKGROUND")
-        s2:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-196)
-        s2:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-196)
+        s2:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-224)
+        s2:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-224)
         s2:SetHeight(1) s2:SetTexture(0.3,0.3,0.5,0.6)
 
         local rLbl = panel:CreateFontString(nil,"OVERLAY","GameFontNormal")
-        rLbl:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-200)
-        rLbl:SetText("|cffFFD700Recrutement automatique|r")
+        rLbl:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-228)
+        rLbl:SetText("|cffFFD700Auto recruitment|r")
 
         RT.UI.Button(panel, {
-            text="Reset Compteurs", width=120, height=20, color={0.4,0.1,0.4},
-            anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-198},
+            text="Reset counts", width=120, height=20, color={0.4,0.1,0.4},
+            anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-226},
             onClick=function()
                 WB.counts  = { tank=0, heal=0, dps=0 }
                 WB.pending = {}
@@ -15743,8 +16193,8 @@ RT.Modules.Register({
         -- Min gear cycle button
         local mgBtn = CreateFrame("Button","RT3_WBMGBtn",panel,"UIPanelButtonTemplate")
         mgBtn:SetWidth(140) mgBtn:SetHeight(22)
-        mgBtn:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-220)
-        mgBtn:SetText("Requis: Phase 1")
+        mgBtn:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-248)
+        mgBtn:SetText("Min: Phase 1")
         mgBtn:SetScript("OnClick", function()
             local bd  = WB.getData()
             local cur = bd.recruit.minGear or "phase1"
@@ -15754,7 +16204,7 @@ RT.Modules.Register({
             elseif cur == "phase2" then nxt = "pregear"
             end
             bd.recruit.minGear = nxt
-            mgBtn:SetText("Requis: " .. (WB.GEAR_LABEL[nxt] or nxt))
+            mgBtn:SetText("Min: " .. (WB.GEAR_LABEL[nxt] or nxt))
         end)
         panel._wbMGBtn = mgBtn
 
@@ -15764,10 +16214,10 @@ RT.Modules.Register({
         for i = 1, table.getn(SLOTS) do
             local sk, sn, ox = SLOTS[i][1], SLOTS[i][2], SLOTS[i][3]
             local sl = panel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-            sl:SetPoint("TOPLEFT",panel,"TOPLEFT",ox,-222)
+            sl:SetPoint("TOPLEFT",panel,"TOPLEFT",ox,-250)
             sl:SetText(sn..":")
             local inp = CreateFrame("EditBox","RT3_WBSl_"..sk,panel,"InputBoxTemplate")
-            inp:SetPoint("TOPLEFT",panel,"TOPLEFT",ox+30,-220)
+            inp:SetPoint("TOPLEFT",panel,"TOPLEFT",ox+30,-248)
             inp:SetWidth(34) inp:SetHeight(20) inp:SetAutoFocus(false)
             inp:SetNumeric(true)
             inp:SetScript("OnEscapePressed", function() inp:ClearFocus() end)
@@ -15782,30 +16232,30 @@ RT.Modules.Register({
 
         -- Count display
         local cD = panel:CreateFontString(nil,"OVERLAY","GameFontNormal")
-        cD:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-246)
+        cD:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-274)
         cD:SetText("|cffFF8888Tank 0/2|r   |cff88FF88Heal 0/6|r   |cffAAAAFFDPS 0/22|r")
         WB.cDisp = cD
         panel._wbCDisp = cD
 
         local s3 = panel:CreateTexture(nil,"BACKGROUND")
-        s3:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-264)
-        s3:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-264)
+        s3:SetPoint("TOPLEFT",panel,"TOPLEFT",6,-292)
+        s3:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-6,-292)
         s3:SetHeight(1) s3:SetTexture(0.3,0.3,0.5,0.6)
 
         RT.UI.Button(panel, {
             text="Clear Log", width=80, height=20, color={0.3,0.3,0.3},
-            anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-268},
+            anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-296},
             onClick=function()
                 WB.log = {}
                 if WB.disp then WB.disp:SetText("") end
             end,
         })
         local logL = panel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-        logL:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-268)
-        logL:SetText("|cffAAAAFFActivite recente :|r")
+        logL:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-296)
+        logL:SetText("|cffAAAAFFRecent activity:|r")
 
         local logD = RT.UI.TextScroll(panel, {
-            name="RT3_WBLog", anchor={"TOPLEFT",panel,"TOPLEFT",8,-288},
+            name="RT3_WBLog", anchor={"TOPLEFT",panel,"TOPLEFT",8,-316},
             width=680, font="GameFontHighlightSmall",
         })
         logD.scroll:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-28,8)
@@ -15828,10 +16278,10 @@ RT.Modules.Register({
         if panel._wbAIBtn then
             local tex = panel._wbAIBtn:GetNormalTexture()
             if bd.autoinvite then
-                panel._wbAIBtn:SetText("RECRUTEMENT: ON")
+                panel._wbAIBtn:SetText("RECRUITMENT: ON")
                 if tex then tex:SetVertexColor(0.10,0.55,0.10) end
             else
-                panel._wbAIBtn:SetText("RECRUTEMENT: OFF")
+                panel._wbAIBtn:SetText("RECRUITMENT: OFF")
                 if tex then tex:SetVertexColor(0.25,0.25,0.55) end
             end
         end
@@ -15840,9 +16290,16 @@ RT.Modules.Register({
                 inp:SetText((bd.templates and bd.templates[k]) or "")
             end
         end
+        if panel._wbChanBtn then
+            local key = (bd.lfm and bd.lfm.channel) or "SAY"
+            panel._wbChanBtn:SetText("Channel: " .. (WB.LFM_LABELS[key] or key))
+        end
+        if panel._wbLfmEB then
+            panel._wbLfmEB:SetText((bd.lfm and bd.lfm.msg) or "")
+        end
         if panel._wbMGBtn then
             local rc = bd.recruit or {}
-            panel._wbMGBtn:SetText("Requis: " .. (WB.GEAR_LABEL[rc.minGear or "phase1"] or "Phase 1"))
+            panel._wbMGBtn:SetText("Min: " .. (WB.GEAR_LABEL[rc.minGear or "phase1"] or "Phase 1"))
         end
         if panel._wbSlot then
             local s = (bd.recruit and bd.recruit.slots) or {}
@@ -15915,7 +16372,7 @@ do
         if RT and RT.Modules and RT.Modules.Toggle then
             RT.Modules.Toggle()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu non chargé.|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFF4444[RT] Menu not loaded.|r")
         end
     end)
 
@@ -15925,8 +16382,8 @@ do
     RTMB:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip:AddLine("|cffFFD700RT — Raid Tool|r")
-        GameTooltip:AddLine("Clic gauche : ouvrir le menu", 1, 1, 1)
-        GameTooltip:AddLine("Glisser : déplacer le bouton", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Left-click: open the menu", 1, 1, 1)
+        GameTooltip:AddLine("Drag: move the button", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     RTMB:SetScript("OnLeave", function() GameTooltip:Hide() end)

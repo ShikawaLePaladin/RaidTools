@@ -17,7 +17,7 @@ local function fmtAttendance(filter)
             table.insert(L, "  |cff88FF88-|r  " .. k.date .. "  |cffCCCCCC" .. k.boss .. "|r")
         end
         if stats.total == 0 then
-            table.insert(L, "|cff888888(aucun kill enregistré pour ce joueur)|r")
+            table.insert(L, "|cff888888(no kill recorded for this player)|r")
         end
         return table.concat(L, "\n")
     end
@@ -27,7 +27,7 @@ local function fmtAttendance(filter)
     for boss in pairs(att) do table.insert(bossNames, boss) end
     table.sort(bossNames)
     if table.getn(bossNames) == 0 then
-        return "|cff888888Aucun kill enregistré. Les kills se sauvegardent tout seuls en combat, ou via 'Enregistrer Kill'.|r"
+        return "|cff888888No kill recorded. Kills are saved automatically in combat, or via 'Record Kill'.|r"
     end
     local L = {}
     for bi = 1, table.getn(bossNames) do
@@ -47,13 +47,13 @@ end
 
 RT.Modules.Register({
     id       = "attend",
-    title    = "Présences",
+    title    = "Attendance",
     color    = { 0.30, 1.00, 0.50 },
     tabWidth = 84,
 
     build = function(panel)
         RT.UI.Label(panel, {
-            text = "|cff88FF88Présences|r  —  historique des kills et participations",
+            text = "|cff88FF88Attendance|r  —  history of kills and participation",
             font = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
@@ -61,7 +61,7 @@ RT.Modules.Register({
         local display   -- forward ref
 
         RT.UI.Button(panel, {
-            text = "Enregistrer Kill", width = 130, height = 22,
+            text = "Record Kill", width = 130, height = 22,
             color = { 0.10, 0.70, 0.20 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -12, -8 },
             onClick = function()
@@ -70,14 +70,14 @@ RT.Modules.Register({
                     RT_Attend.RecordKill(boss)
                     if display then display:SetText(fmtAttendance("")) end
                 else
-                    RT.Print("|cffFFAA00Aucun boss sélectionné (onglet Boss v2).|r")
+                    RT.Print("|cffFFAA00No boss selected (Boss v2 tab).|r")
                 end
             end,
-            tooltip = "Enregistre un kill du boss actuellement sélectionné + snapshot des présents.",
+            tooltip = "Records a kill of the currently selected boss + snapshot of present members.",
         })
 
         RT.UI.Label(panel, {
-            text = "Joueur :", font = "GameFontDisable",
+            text = "Player:", font = "GameFontDisable",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -36 },
         })
         local search = CreateFrame("EditBox", "RT3_AttendSearch", panel, "InputBoxTemplate")

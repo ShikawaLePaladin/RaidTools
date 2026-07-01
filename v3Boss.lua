@@ -13,7 +13,7 @@ local MARKERS = {
     { idx=3, name="Diamant",      tc={0.50,0.75,0.00,0.50} },
     { idx=2, name="Cercle",       tc={0.25,0.50,0.00,0.50} },
     { idx=1, name="Etoile",       tc={0.00,0.25,0.00,0.50} },
-    { idx=0, name="Aucun",        tc=nil                    },
+    { idx=0, name="None",         tc=nil                    },
 }
 local PRESET_MARK = {
     Skull=8, Cross=7, Square=6, Moon=5, Triangle=4, Diamond=3, Circle=2, Star=1
@@ -134,31 +134,31 @@ end
 -- Globale (pas un local de chunk) ; marks suivent l'ordre des MT.
 RT_TRASH_PRESETS = {
     ["Molten Core"] = {
-        { name="Pack Lucifron",      tc=2, marks={"Skull","Cross"},          note="Flamewaker Protector au Skull. Interrompre les soins des Flamewaker." },
-        { name="Core Hounds",        tc=2, marks={"Skull","Cross"},          note="Tuer les chiens groupes (~10s) sinon resurrection." },
-        { name="Firesworn (Garr)",   tc=1, marks={"Skull"},                  note="Explosent a la mort. Tuer a l'ecart du raid." },
+        { name="Pack Lucifron",      tc=2, marks={"Skull","Cross"},          note="Flamewaker Protector on Skull. Interrupt the Flamewakers' heals." },
+        { name="Core Hounds",        tc=2, marks={"Skull","Cross"},          note="Kill the hounds together (~10s) or they resurrect." },
+        { name="Firesworn (Garr)",   tc=1, marks={"Skull"},                  note="Explode on death. Kill away from the raid." },
     },
     ["Blackwing Lair"] = {
-        { name="Suppression Room",   tc=2, marks={"Skull","Cross"},          note="Desamorcer les Suppression Devices. Pull en chaine." },
-        { name="Death Talon Drakonid",tc=2, marks={"Skull","Cross"},         note="Tanks separes. Focus Skull, interrompre." },
+        { name="Suppression Room",   tc=2, marks={"Skull","Cross"},          note="Disarm the Suppression Devices. Chain pulls." },
+        { name="Death Talon Drakonid",tc=2, marks={"Skull","Cross"},         note="Separate tanks. Focus Skull, interrupt." },
     },
     ["Temple of Ahn"] = {
-        { name="Anubisath (entree)", tc=2, marks={"Skull","Cross"},          note="Gros adds. Tank chacun, focus Skull." },
-        { name="Qiraji Champion",    tc=2, marks={"Skull","Cross"},          note="CC les casters si possible. Kill Skull puis Cross." },
+        { name="Anubisath (entrance)",tc=2, marks={"Skull","Cross"},         note="Big adds. Tank each, focus Skull." },
+        { name="Qiraji Champion",    tc=2, marks={"Skull","Cross"},          note="CC casters if possible. Kill Skull then Cross." },
     },
     ["Naxxramas"] = {
-        { name="Aile Araignee",      tc=2, marks={"Skull","Cross"},          note="Web Wrap aleatoire. Focus Skull." },
-        { name="Aile Abomination",   tc=2, marks={"Skull","Cross"},          note="Slimes : eviter la fusion." },
-        { name="Quartier Militaire", tc=3, marks={"Skull","Cross","Square"}, note="Death Knights : interrompre. Gerer les invocations." },
-        { name="Quartier Construction",tc=2, marks={"Skull","Cross"},        note="Patchwork/Stitched : poison. Focus groupe." },
+        { name="Spider Wing",        tc=2, marks={"Skull","Cross"},          note="Random Web Wrap. Focus Skull." },
+        { name="Abomination Wing",   tc=2, marks={"Skull","Cross"},          note="Slimes: avoid merging." },
+        { name="Military Quarter",   tc=3, marks={"Skull","Cross","Square"}, note="Death Knights: interrupt. Manage summons." },
+        { name="Construction Quarter",tc=2, marks={"Skull","Cross"},        note="Patchwork/Stitched: poison. Focus together." },
     },
 }
 
 -- Popup de saisie pour ajouter un pack de trash perso
 StaticPopupDialogs["RT3_ADD_TRASH"] = {
     text = "Nom du pack de trash :",
-    button1 = "Ajouter",
-    button2 = "Annuler",
+    button1 = "Add",
+    button2 = "Cancel",
     hasEditBox = 1,
     maxLetters = 40,
     OnShow = function()
@@ -185,7 +185,7 @@ StaticPopupDialogs["RT3_ADD_TRASH"] = {
 RT.Modules.Register({
     id       = "boss",
     title    = "Boss",
-    tip      = "Par boss : tanks + marqueurs de cible, soins par groupe, note tactique. Les packs de trash (orange) sont sous chaque raid.",
+    tip      = "Per boss: tanks + target markers, group healing, tactic note. Trash packs (orange) are under each raid.",
     color    = { 1.00, 0.30, 0.30 },
     tabWidth = 50,
 
@@ -211,22 +211,22 @@ RT.Modules.Register({
         local bossTitle = det:CreateFontString(nil,"OVERLAY","GameFontNormal")
         bossTitle:SetPoint("TOPLEFT", det, "TOPLEFT", 8, -8)
         bossTitle:SetWidth(240)
-        bossTitle:SetText("|cff666666— Sélectionne un boss —|r")
+        bossTitle:SetText("|cff666666— Select a boss —|r")
 
         local presetBtn = RT.UI.Button(det, {
-            text="Charger Preset", width=128, height=20, color={0.15,0.35,0.55},
+            text="Load Preset", width=128, height=20, color={0.15,0.35,0.55},
             anchor={"TOPRIGHT", det, "TOPRIGHT", -4, -6},
         })
 
         local trashBtn = RT.UI.Button(det, {
             text="+ Trash", width=62, height=20, color={0.45,0.30,0.10},
             anchor={"TOPRIGHT", det, "TOPRIGHT", -136, -6},
-            tooltip="Ajoute un pack de trash perso au raid de l'entrée sélectionnée.",
+            tooltip="Adds a custom trash pack to the raid of the selected entry.",
         })
         trashBtn:SetScript("OnClick", function()
             local raid = det._current and det._entryRaid and det._entryRaid[det._current]
             if not raid then
-                RT.Print("|cffFFAA00Sélectionne d'abord un boss/trash du raid voulu.|r")
+                RT.Print("|cffFFAA00Select a boss/trash of the desired raid first.|r")
                 return
             end
             det._addTrashRaid = raid
@@ -501,7 +501,7 @@ RT.Modules.Register({
                         end
                     end
                     if table.getn(hn)>0 then
-                        SendChatMessage("["..boss.."] Soins tank: "..table.concat(hn," / "), "RAID")
+                        SendChatMessage("["..boss.."] Tank heals: "..table.concat(hn," / "), "RAID")
                     end
                 else
                     local hn = {}
@@ -732,7 +732,7 @@ RT.Modules.Register({
             if applyPreset(boss, e) then
                 applyAssignDefault(e)
                 noteEB:SetText(e.note or "")
-                RT.Print("|cff44FF88Preset rechargé: "..boss.."|r")
+                RT.Print("|cff44FF88Preset reloaded: "..boss.."|r")
                 refresh()
             else
                 RT.Print("|cffFF8888Aucun preset pour: "..boss.."|r")
@@ -864,7 +864,7 @@ RT.Modules.Register({
             tdb[raid] = tdb[raid] or {}
             table.insert(tdb[raid], name)
             buildBossList()
-            RT.Print("|cff44FF88Trash ajouté à "..raid..": "..name.."|r")
+            RT.Print("|cff44FF88Trash added to "..raid..": "..name.."|r")
         end
 
         panel._detail = det
