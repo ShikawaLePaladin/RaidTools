@@ -48,7 +48,7 @@ local function fmtStatus()
     -- Boss courant
     local boss = RT_BOSS_STATE and RT_BOSS_STATE.bossName or ""
     add(" ")
-    add("|cffFFD700» BOSS ACTUEL|r")
+    add("|cffFFD700» CURRENT BOSS|r")
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
@@ -57,7 +57,7 @@ local function fmtStatus()
 
     -- Résumé de la dernière attribution
     add(" ")
-    add("|cffFFD700» ATTRIBUTION|r")
+    add("|cffFFD700» ASSIGNMENTS|r")
     if RT_AA_LAST and RT_AA_LAST.tanks and table.getn(RT_AA_LAST.tanks) > 0 then
         local tk = RT_AA_LAST.tanks
         for i = 1, table.getn(tk) do

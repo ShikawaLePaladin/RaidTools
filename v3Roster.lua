@@ -231,7 +231,7 @@ RT.Modules.Register({
                 if missing > 0 then
                     RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
                     if RT3_AskSpecs then RT3_AskSpecs(true)
-                    else RT.Print("|cffFFAA00(Ouvre l'onglet WhisperBot une fois pour activer la demande de spé.)|r") end
+                    else RT.Print("|cffFFAA00(WhisperBot module not loaded yet — open that tab once to activate.)|r") end
                 elseif changed > 0 then
                     RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
                 else

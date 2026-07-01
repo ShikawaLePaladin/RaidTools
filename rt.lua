@@ -11378,6 +11378,10 @@ end
 
 
 
+
+
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -12151,7 +12155,7 @@ local function fmtStatus()
     -- Boss courant
     local boss = RT_BOSS_STATE and RT_BOSS_STATE.bossName or ""
     add(" ")
-    add("|cffFFD700» BOSS ACTUEL|r")
+    add("|cffFFD700» CURRENT BOSS|r")
     if boss ~= "" then
         add("  |cffFF7D0A" .. boss .. "|r")
     else
@@ -12160,7 +12164,7 @@ local function fmtStatus()
 
     -- Résumé de la dernière attribution
     add(" ")
-    add("|cffFFD700» ATTRIBUTION|r")
+    add("|cffFFD700» ASSIGNMENTS|r")
     if RT_AA_LAST and RT_AA_LAST.tanks and table.getn(RT_AA_LAST.tanks) > 0 then
         local tk = RT_AA_LAST.tanks
         for i = 1, table.getn(tk) do
@@ -12493,7 +12497,7 @@ RT.Modules.Register({
                 if missing > 0 then
                     RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
                     if RT3_AskSpecs then RT3_AskSpecs(true)
-                    else RT.Print("|cffFFAA00(Ouvre l'onglet WhisperBot une fois pour activer la demande de spé.)|r") end
+                    else RT.Print("|cffFFAA00(WhisperBot module not loaded yet — open that tab once to activate.)|r") end
                 elseif changed > 0 then
                     RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
                 else
