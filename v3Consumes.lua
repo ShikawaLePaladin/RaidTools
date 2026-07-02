@@ -26,11 +26,12 @@ RT.Modules.Register({
     tabWidth = 80,
 
     build = function(panel)
-        RT.UI.Label(panel, {
-            text   = "|cff99FF44Consumables|r - checklist per raid player",
+        local titleFS = RT.UI.Label(panel, {
+            text   = "|cff99FF44Consumables|r",
             font   = "GameFontNormal",
             anchor = { "TOPLEFT", panel, "TOPLEFT", 12, -10 },
         })
+        panel._cTitle = titleFS
 
         RT.UI.Button(panel, {
             text = "Reset checks", width = 100, height = 22, color = { 0.55, 0.20, 0.10 },
@@ -44,22 +45,52 @@ RT.Modules.Register({
         RT.UI.Button(panel, {
             text = "Announce Missing", width = 130, height = 22, color = { 0.60, 0.40, 0.10 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -118, -8 },
+            tooltip = "Announces the list of players not marked Ready to raid (or party) chat.",
             onClick = function()
                 local missing = {}
                 for name, v in pairs(_cData) do
                     if not v.pret then table.insert(missing, name) end
                 end
-                if table.getn(missing) > 0 then
-                    SendChatMessage("Pas prets: " .. table.concat(missing, ", "), "RAID")
+                local chan = nil
+                if GetNumRaidMembers and GetNumRaidMembers() > 0 then chan = "RAID"
+                elseif GetNumPartyMembers and GetNumPartyMembers() > 0 then chan = "PARTY" end
+                if not chan then
+                    RT.Print("|cffFFAA00You're not in a group — nothing announced.|r")
+                elseif table.getn(missing) > 0 then
+                    SendChatMessage("Not ready: " .. table.concat(missing, ", "), chan)
                 else
-                    SendChatMessage("Tout le monde est pret !", "RAID")
+                    SendChatMessage("Everyone is ready!", chan)
+                end
+            end,
+        })
+
+        RT.UI.Button(panel, {
+            text = "Whisper missing", width = 116, height = 22, color = { 0.20, 0.55, 0.75 },
+            anchor = { "TOPRIGHT", panel, "TOPRIGHT", -254, -8 },
+            tooltip = "Whispers every player not marked Ready to remind them to get flask/food up.",
+            onClick = function()
+                local sent = 0
+                for name, v in pairs(_cData) do
+                    if not v.pret then
+                        local target = name
+                        RT.After(sent * 0.3, function()
+                            SendChatMessage("[RaidTools] Reminder: get your consumes up (flask/food) — pull soon!", "WHISPER", nil, target)
+                        end)
+                        sent = sent + 1
+                    end
+                end
+                if sent > 0 then
+                    RT.Print("|cff44CCFF[Consumes]|r Reminder whispered to " .. sent .. " player(s).")
+                else
+                    RT.Print("|cff44FF88[Consumes]|r Everyone is marked ready — no whisper sent.")
                 end
             end,
         })
 
         RT.UI.Button(panel, {
             text = "Scan Raid", width = 80, height = 22, color = { 0.20, 0.40, 0.70 },
-            anchor = { "TOPRIGHT", panel, "TOPRIGHT", -254, -8 },
+            anchor = { "TOPRIGHT", panel, "TOPRIGHT", -376, -8 },
+            tooltip = "Re-scans raid members and auto-detects flask/food buffs.",
             onClick = function()
                 if panel._cRefresh then panel._cRefresh() end
             end,
@@ -137,6 +168,7 @@ RT.Modules.Register({
                     else
                         fs:SetText("|cff444444[ ]|r")
                     end
+                    if key == "pret" and panel._cRefresh then panel._cRefresh() end
                 end)
                 return btn
             end
@@ -198,6 +230,19 @@ RT.Modules.Register({
                 end
             end
             child:SetHeight(count * ROW_H + 4)
+            if panel._cTitle then
+                local ready = 0
+                for j = 1, count do
+                    local v = _cData[names[j]]
+                    if v and v.pret then ready = ready + 1 end
+                end
+                if count > 0 then
+                    local col = (ready == count) and "44FF44" or "FFAA00"
+                    panel._cTitle:SetText("|cff99FF44Consumables|r  |cff" .. col .. ready .. "/" .. count .. " ready|r")
+                else
+                    panel._cTitle:SetText("|cff99FF44Consumables|r  |cff888888(not in a raid)|r")
+                end
+            end
         end
         panel._cRefresh = refresh
     end,

@@ -223,6 +223,7 @@ function WB.getData()
     if not db.v3bot.lfm then
         db.v3bot.lfm = { msg="LFM raid - need {tank} tank {heal} heal {dps} dps - /w me", channel="SAY" }
     end
+    if db.v3bot.tacAuto == nil then db.v3bot.tacAuto = true end
     -- Migration FR → EN : remplace UNIQUEMENT les textes par défaut non
     -- personnalisés (ceux encore égaux aux anciens défauts français).
     db.v3bot.templates = db.v3bot.templates or {}
@@ -355,10 +356,305 @@ function WB.recruitStep(sender, cmd, bd)
     end
 end
 
+-- ============================================================
+-- Tactics hub (inspiré de Tactica) : détection du boss ciblé,
+-- fenêtre de post rapide, préview locale, tactiques custom.
+-- ============================================================
+
+WB.tacSeen = {}   -- boss déjà suggérés cette session (anti-spam)
+
+-- Tactique correspondant à la cible courante (hostile, vivante) — match exact.
+function WB.tacDetect()
+    if not UnitExists or not UnitExists("target") then return nil end
+    if UnitIsDead and UnitIsDead("target") then return nil end
+    if UnitCanAttack and not UnitCanAttack("player", "target") then return nil end
+    local tname = UnitName("target")
+    if not tname or tname == "" then return nil end
+    if RT_Tactics and RT_Tactics.Find then
+        local t = RT_Tactics.Find(tname)
+        -- Find fait aussi du match partiel : ne garde que l'exact (anti faux-positif)
+        if t and string.lower(t.boss or "") == string.lower(tname) then return t end
+    end
+    return nil
+end
+
+function WB.tacFmt(t)
+    if not t then return "|cff888888Select a boss on the left, or target one in-game.|r" end
+    local L = { "|cffFFD700" .. (t.boss or "?") .. "|r  |cff888888" .. (t.raid or "") .. "|r", " " }
+    for i = 1, table.getn(t.lines or {}) do
+        table.insert(L, "|cffDDDDDD" .. t.lines[i] .. "|r")
+    end
+    return table.concat(L, "\n")
+end
+
+function WB.tacSelect(t)
+    WB.tacSel = t
+    if WB.tacFrame then
+        if WB.tacFrame._prev then WB.tacFrame._prev:SetText(WB.tacFmt(t)) end
+        if WB.tacFrame._custEB and t then WB.tacFrame._custEB:SetText(t.boss or "") end
+    end
+end
+
+-- Poste la tactique sélectionnée. channel="SELF" = préview locale dans le chat.
+function WB.tacPost(channel)
+    local t = WB.tacSel
+    if not t then RT.Print("|cffFFAA00[Tactics] Select a boss first.|r") return end
+    if channel == "SELF" then
+        RT.Print("|cffFFD700[Tactics preview] " .. t.boss .. "|r")
+        for i = 1, table.getn(t.lines or {}) do RT.Print("  " .. t.lines[i]) end
+        return
+    end
+    if RT_Tactics and RT_Tactics.Post then RT_Tactics.Post(t.boss, channel) end
+end
+
+-- Ouvre (et crée au besoin) la fenêtre Tactics. preselect = tactique à afficher.
+function WB.tacOpen(preselect)
+    if not WB.tacFrame then
+        local f = CreateFrame("Frame", "RT3_WBTacFrame", UIParent)
+        WB.tacFrame = f
+        f:SetWidth(600) f:SetHeight(430)
+        f:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+        f:SetBackdrop({
+            bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        f:SetBackdropColor(0.05, 0.05, 0.09, 0.96)
+        f:SetFrameStrata("DIALOG")
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function() f:StartMoving() end)
+        f:SetScript("OnDragStop",  function() f:StopMovingOrSizing() end)
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", f, "TOP", 0, -10)
+        title:SetText("|cffFFD700Boss Tactics|r  |cff666666— post strategies to your raid|r")
+
+        local closeB = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        closeB:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+
+        -- Auto-detect toggle
+        local autoBtn = RT.UI.Button(f, {
+            text = "Auto-detect: ON", width = 122, height = 20, color = { 0.10, 0.50, 0.10 },
+            anchor = { "TOPLEFT", f, "TOPLEFT", 12, -28 },
+            tooltip = "When ON: targeting a raid boss (while in a group, out of combat) opens this window with its strategy preselected.",
+        })
+        autoBtn:SetScript("OnClick", function()
+            local bd = WB.getData()
+            bd.tacAuto = not bd.tacAuto
+            local tex = autoBtn:GetNormalTexture()
+            if bd.tacAuto then
+                autoBtn:SetText("Auto-detect: ON")
+                if tex then tex:SetVertexColor(0.10, 0.50, 0.10) end
+            else
+                autoBtn:SetText("Auto-detect: OFF")
+                if tex then tex:SetVertexColor(0.45, 0.15, 0.10) end
+            end
+        end)
+        f._autoBtn = autoBtn
+
+        RT.UI.Button(f, {
+            text = "Use my target", width = 108, height = 20, color = { 0.55, 0.35, 0.10 },
+            anchor = { "TOPLEFT", f, "TOPLEFT", 140, -28 },
+            tooltip = "Selects the strategy matching your current target.",
+            onClick = function()
+                local t = WB.tacDetect()
+                if t then WB.tacSelect(t)
+                else RT.Print("|cffFFAA00[Tactics] No known boss targeted.|r") end
+            end,
+        })
+
+        -- Search + boss list (left)
+        local search = CreateFrame("EditBox", "RT3_WBTacSearch", f, "InputBoxTemplate")
+        search:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -54)
+        search:SetWidth(200) search:SetHeight(20)
+        search:SetAutoFocus(false)
+        search:SetScript("OnEscapePressed", function() search:ClearFocus() end)
+
+        local scroll, child = RT.UI.ScrollArea(f, {
+            name = "RT3_WBTacScroll",
+            anchor = { "TOPLEFT", f, "TOPLEFT", 12, -78 },
+            childWidth = 210,
+        })
+        scroll:SetWidth(220)
+        scroll:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 66)
+
+        local list = RT.UI.List(child, {
+            rowHeight = 17, gap = 1,
+            makeRow = function(l)
+                local b = CreateFrame("Button", nil, l, "UIPanelButtonTemplate")
+                b:SetHeight(17)
+                local fs = b:GetFontString()
+                if fs then fs:SetPoint("LEFT", b, "LEFT", 4, 0) end
+                return b
+            end,
+            fillRow = function(row, item)
+                local fs = row:GetFontString()
+                if item.type == "header" then
+                    row:SetText("|cffFFD700" .. (item.raid or "?") .. "|r")
+                    row:EnableMouse(false)
+                    local nt = row:GetNormalTexture()
+                    local ht = row:GetHighlightTexture()
+                    if nt then nt:SetAlpha(0) end
+                    if ht then ht:SetAlpha(0) end
+                else
+                    row:SetText("  " .. (item.boss or "?"))
+                    row:EnableMouse(true)
+                    local nt = row:GetNormalTexture()
+                    local ht = row:GetHighlightTexture()
+                    if nt then nt:SetAlpha(1) end
+                    if ht then ht:SetAlpha(1) end
+                    local tac = item
+                    row:SetScript("OnClick", function() WB.tacSelect(tac) end)
+                end
+                if fs then fs:SetJustifyH("LEFT") end
+            end,
+        })
+        list:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
+        list:SetWidth(205)
+
+        local function refreshList()
+            local query = search:GetText() or ""
+            local items = {}
+            local all = (RT_Tactics and RT_Tactics.FindAll) and RT_Tactics.FindAll(query) or {}
+            if string.len(query) == 0 then
+                local byRaid, order = {}, {}
+                for i = 1, table.getn(all) do
+                    local t = all[i]
+                    local r = t.raid or "Misc"
+                    if not byRaid[r] then byRaid[r] = {}; table.insert(order, r) end
+                    table.insert(byRaid[r], t)
+                end
+                table.sort(order)
+                for ri = 1, table.getn(order) do
+                    table.insert(items, { type = "header", raid = order[ri] })
+                    local bosses = byRaid[order[ri]]
+                    table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
+                    for bi = 1, table.getn(bosses) do table.insert(items, bosses[bi]) end
+                end
+            else
+                items = all
+            end
+            list:SetItems(items)
+            child:SetHeight(list:GetHeight() or 1)
+        end
+        search:SetScript("OnTextChanged", refreshList)
+        f._refreshList = refreshList
+
+        -- Preview (right)
+        local prev = RT.UI.TextScroll(f, {
+            name = "RT3_WBTacPreview",
+            anchor = { "TOPLEFT", f, "TOPLEFT", 246, -54 },
+            width = 320, font = "GameFontHighlightSmall",
+        })
+        prev.scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 66)
+        f._prev = prev
+
+        -- Custom tactic row
+        local custLb = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        custLb:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 44)
+        custLb:SetText("|cff69CCF0Custom:|r boss name + text, Save. Custom entries appear in the list and in ?strat.")
+
+        local custEB = CreateFrame("EditBox", "RT3_WBTacCustBoss", f, "InputBoxTemplate")
+        custEB:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 22)
+        custEB:SetWidth(120) custEB:SetHeight(18) custEB:SetAutoFocus(false)
+        custEB:SetScript("OnEscapePressed", function() custEB:ClearFocus() end)
+        f._custEB = custEB
+
+        local custTxt = CreateFrame("EditBox", "RT3_WBTacCustText", f, "InputBoxTemplate")
+        custTxt:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 146, 22)
+        custTxt:SetWidth(250) custTxt:SetHeight(18) custTxt:SetAutoFocus(false)
+        custTxt:SetScript("OnEscapePressed", function() custTxt:ClearFocus() end)
+        f._custTxt = custTxt
+
+        RT.UI.Button(f, {
+            text = "Save", width = 52, height = 20, color = { 0.15, 0.50, 0.20 },
+            anchor = { "BOTTOMLEFT", f, "BOTTOMLEFT", 402, 21 },
+            tooltip = "Saves (or replaces) a custom tactic for this boss name.",
+            onClick = function()
+                local b = custEB:GetText() or ""
+                local x = custTxt:GetText() or ""
+                if RT_Tactics and RT_Tactics.AddCustom and RT_Tactics.AddCustom(b, x) then
+                    custTxt:SetText("")
+                    if f._refreshList then f._refreshList() end
+                else
+                    RT.Print("|cffFFAA00[Tactics] Enter a boss name AND a tactic text.|r")
+                end
+            end,
+        })
+        RT.UI.Button(f, {
+            text = "Delete", width = 58, height = 20, color = { 0.50, 0.15, 0.10 },
+            anchor = { "BOTTOMLEFT", f, "BOTTOMLEFT", 458, 21 },
+            tooltip = "Deletes the custom tactic with this boss name.",
+            onClick = function()
+                if RT_Tactics and RT_Tactics.DeleteCustom then
+                    RT_Tactics.DeleteCustom(custEB:GetText() or "")
+                    if f._refreshList then f._refreshList() end
+                end
+            end,
+        })
+
+        -- Bottom action row
+        RT.UI.Button(f, {
+            text = "Post /Raid", width = 96, height = 22, color = { 1.00, 0.55, 0.20 },
+            anchor = { "BOTTOMLEFT", f, "BOTTOMLEFT", 246, 0 },
+            onClick = function() WB.tacPost("RAID") end,
+        })
+        RT.UI.Button(f, {
+            text = "Post /Party", width = 96, height = 22,
+            anchor = { "BOTTOMLEFT", f, "BOTTOMLEFT", 346, 0 },
+            onClick = function() WB.tacPost("PARTY") end,
+        })
+        RT.UI.Button(f, {
+            text = "Preview", width = 80, height = 22, color = { 0.30, 0.40, 0.55 },
+            anchor = { "BOTTOMLEFT", f, "BOTTOMLEFT", 446, 0 },
+            tooltip = "Prints the strategy only for you (chat), without sending anything to the raid.",
+            onClick = function() WB.tacPost("SELF") end,
+        })
+    end
+
+    -- refresh state
+    local bd = WB.getData()
+    local autoBtn = WB.tacFrame._autoBtn
+    if autoBtn then
+        local tex = autoBtn:GetNormalTexture()
+        if bd.tacAuto then
+            autoBtn:SetText("Auto-detect: ON")
+            if tex then tex:SetVertexColor(0.10, 0.50, 0.10) end
+        else
+            autoBtn:SetText("Auto-detect: OFF")
+            if tex then tex:SetVertexColor(0.45, 0.15, 0.10) end
+        end
+    end
+    if WB.tacFrame._refreshList then WB.tacFrame._refreshList() end
+    if preselect then WB.tacSelect(preselect)
+    else WB.tacSelect(WB.tacSel) end
+    WB.tacFrame:Show()
+end
+
 -- Event frame (stored in WB, not as a chunk-level local)
 WB.frame = CreateFrame("Frame", "RT3_WBFrame")
 WB.frame:RegisterEvent("CHAT_MSG_WHISPER")
+WB.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 WB.frame:SetScript("OnEvent", function()
+    if event == "PLAYER_TARGET_CHANGED" then
+        -- Suggestion façon Tactica : boss connu ciblé → ouvre la fenêtre (1x/boss)
+        local bd = WB.getData()
+        if not bd.tacAuto then return end
+        if UnitAffectingCombat and UnitAffectingCombat("player") then return end
+        local grp = (GetNumRaidMembers and GetNumRaidMembers() or 0)
+                  + (GetNumPartyMembers and GetNumPartyMembers() or 0)
+        if grp == 0 then return end
+        local t = WB.tacDetect()
+        if t and not WB.tacSeen[t.boss] then
+            WB.tacSeen[t.boss] = true
+            RT.Print("|cffFFD700[Tactics]|r Boss detected: |cffFF7D0A" .. t.boss .. "|r")
+            WB.tacOpen(t)
+        end
+        return
+    end
     if event ~= "CHAT_MSG_WHISPER" then return end
 
     local msg    = arg1 or ""
@@ -525,7 +821,7 @@ end)
 RT.Modules.Register({
     id       = "whisperbot",
     title    = "WhisperBot",
-    tip      = "Pug hub: auto recruitment (?join), multi-channel LFM, one-click spec request, comp announce, and auto replies (?mt ?group ?comp ?strat).",
+    tip      = "Pug hub: auto recruitment (?join), multi-channel LFM, spec request, comp announce, boss tactics window with auto-detection, and auto replies (?mt ?group ?comp ?strat).",
     color    = { 1.00, 0.80, 0.20 },
     tabWidth = 90,
 
@@ -574,6 +870,14 @@ RT.Modules.Register({
             anchor={"TOPRIGHT",panel,"TOPRIGHT",-10,-10},
             tooltip="Whisper every raid member to ask their spec. Players who have RaidTools answer automatically; replies fill the roster and set the role.",
             onClick=function() WB.askSpecs(false) end,
+        })
+
+        -- Button: tactics hub (boss detection, quick post, customs)
+        RT.UI.Button(panel, {
+            text="Tactics", width=76, height=28, color={0.75,0.55,0.15},
+            anchor={"TOPRIGHT",panel,"TOPRIGHT",-142,-10},
+            tooltip="Opens the Boss Tactics window: browse/search all strategies, post to raid, preview, custom tactics, and auto-detection when you target a boss.",
+            onClick=function() WB.tacOpen() end,
         })
 
         local infoL = panel:CreateFontString(nil,"OVERLAY","GameFontDisable")
