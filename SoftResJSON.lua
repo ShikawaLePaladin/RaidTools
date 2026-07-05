@@ -90,10 +90,10 @@ end
 local function RT_SoftResNormalizeRole(role)
     if not role then return "?" end
     local r = string.lower(role)
-    if string.find(r, "tank")   then return "Tank" end
-    if string.find(r, "heal")   then return "Heal" end
-    if string.find(r, "melee")  then return "DPS"  end
-    if string.find(r, "ranged") then return "DPS"  end
+    if string.find(r, "tank")   then return "Tank"   end
+    if string.find(r, "heal")   then return "Heal"   end
+    if string.find(r, "melee")  then return "Melee"  end
+    if string.find(r, "ranged") then return "Ranged" end
     return "?"
 end
 
@@ -204,9 +204,17 @@ function RT_ImportSoftResJSON(jsonStr)
         end
     end
 
-    local msg = "Importe " .. imported .. " joueur(s)"
+    -- Auto-complétion : classe déduite de la spé (Holy1=Paladin...),
+    -- spé normalisée, rôle affiné Melee/Ranged.
+    local fixedCls = 0
+    if RT3_AutofixRoster then fixedCls = RT3_AutofixRoster() end
+
+    local msg = "Imported " .. imported .. " player(s)"
     if skipped > 0 then
-        msg = msg .. " (" .. skipped .. " ignore(s))"
+        msg = msg .. " (" .. skipped .. " skipped)"
+    end
+    if fixedCls > 0 then
+        msg = msg .. ", " .. fixedCls .. " class(es) auto-detected from spec"
     end
     if isRaidHelper then
         msg = msg .. " [RaidHelper]"

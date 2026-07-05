@@ -8631,6 +8631,7 @@ function RT_ImportRosterOnly(text)
             end
         end
     end
+    if RT3_AutofixRoster then RT3_AutofixRoster() end
     if RT_RosterDisplay then RT_RosterDisplay() end
     if RT_RLUpdateRoleSummary then RT_RLUpdateRoleSummary() end
     RT_UpdateImportStats()
@@ -11384,6 +11385,8 @@ end
 
 
 
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -11543,6 +11546,118 @@ function RT3_RoleFromSpec(cls, spec)
     if c == "SHAMAN"  and string.find(s, "enh")   then return "Melee" end
 
     return nil  -- spé inconnue ou absente
+end
+
+-- ============================================================
+-- Déduction classe + spé canonique depuis un libellé de spé
+-- (imports Raid-Helper / softres / CSV, texte libre FR/EN).
+-- Raid-Helper suffixe "1" les doublons : Holy1/Protection1 =
+-- Paladin, Restoration1 = Shaman (Holy = Priest, Protection =
+-- Warrior, Restoration = Druid).
+-- Ordre = du plus spécifique au plus générique (match substring).
+-- ============================================================
+RT3_SPEC_INFO = {
+    -- Raid-Helper désambiguïsés (à tester AVANT la forme nue)
+    { "protection1",  "Prot",       "PALADIN" },
+    { "holy1",        "Holy",       "PALADIN" },
+    { "restoration1", "Resto",      "SHAMAN"  },
+    -- Druid
+    { "guardian",     "Feral Tank", "DRUID"   },
+    { "feral",        "Feral",      "DRUID"   },
+    { "farouche",     "Feral",      "DRUID"   },
+    { "balance",      "Balance",    "DRUID"   },
+    { "equilibre",    "Balance",    "DRUID"   },
+    { "boomkin",      "Balance",    "DRUID"   },
+    -- Hunter
+    { "beastmaster",  "BM",         "HUNTER"  },
+    { "beast",        "BM",         "HUNTER"  },
+    { "marksman",     "MM",         "HUNTER"  },
+    { "precision",    "MM",         "HUNTER"  },
+    { "survival",     "Surv",       "HUNTER"  },
+    { "survie",       "Surv",       "HUNTER"  },
+    -- Mage
+    { "arcane",       "Arcane",     "MAGE"    },
+    { "fire",         "Fire",       "MAGE"    },
+    { "frost",        "Frost",      "MAGE"    },
+    { "givre",        "Frost",      "MAGE"    },
+    -- Paladin
+    { "retribution",  "Retri",      "PALADIN" },
+    { "vindicte",     "Retri",      "PALADIN" },
+    { "retri",        "Retri",      "PALADIN" },
+    -- Priest
+    { "discipline",   "Disc",       "PRIEST"  },
+    { "disc",         "Disc",       "PRIEST"  },
+    { "shadow",       "Shadow",     "PRIEST"  },
+    { "ombre",        "Shadow",     "PRIEST"  },
+    { "smite",        "Disc",       "PRIEST"  },
+    -- Rogue
+    { "assassination","Assa",       "ROGUE"   },
+    { "combat",       "Combat",     "ROGUE"   },
+    { "subtlety",     "Subt",       "ROGUE"   },
+    { "finesse",      "Subt",       "ROGUE"   },
+    -- Shaman
+    { "elemental",    "Elem",       "SHAMAN"  },
+    { "elementaire",  "Elem",       "SHAMAN"  },
+    { "enhancement",  "Enh",        "SHAMAN"  },
+    { "amelioration", "Enh",        "SHAMAN"  },
+    { "enh",          "Enh",        "SHAMAN"  },
+    -- Warlock
+    { "affliction",   "Affli",      "WARLOCK" },
+    { "demonology",   "Demo",       "WARLOCK" },
+    { "demonologie",  "Demo",       "WARLOCK" },
+    { "destruction",  "Destro",     "WARLOCK" },
+    { "destro",       "Destro",     "WARLOCK" },
+    -- Warrior
+    { "arms",         "Arms",       "WARRIOR" },
+    { "armes",        "Arms",       "WARRIOR" },
+    { "fury",         "Fury",       "WARRIOR" },
+    { "furie",        "Fury",       "WARRIOR" },
+    -- Formes nues (Raid-Helper : classe "premier arrivé")
+    { "protection",   "Prot",       "WARRIOR" },
+    { "restoration",  "Resto",      "DRUID"   },
+    { "holy",         "Holy",       "PRIEST"  },
+    { "sacre",        "Holy",       nil       },
+    -- Abréviations ambiguës : spé canonique connue, classe indéterminée
+    { "resto",        "Resto",      nil       },
+    { "prot",         "Prot",       nil       },
+}
+
+-- Retourne (specCanonique, classeEN|nil) depuis un libellé libre.
+function RT3_SpecInfo(spec)
+    if not spec or spec == "" then return nil, nil end
+    local s = string.lower(spec)
+    for i = 1, table.getn(RT3_SPEC_INFO) do
+        local e = RT3_SPEC_INFO[i]
+        if string.find(s, e[1], 1, true) then return e[2], e[3] end
+    end
+    return nil, nil
+end
+
+-- Complète automatiquement le roster : classe manquante déduite de la
+-- spé, spé normalisée ("Protection1" → "Prot"), rôle affiné (vide/?/DPS
+-- → Tank/Heal/Melee/Ranged). Ne touche jamais un Tank/Heal déjà défini.
+-- Retourne (classesFixées, rôlesFixés).
+function RT3_AutofixRoster()
+    local db = RT_DB and RT_DB.roster
+    if not db then return 0, 0 end
+    local nCls, nRole = 0, 0
+    for _, d in pairs(db) do
+        local canon, cls = RT3_SpecInfo(d.spec)
+        if canon and d.spec ~= canon then d.spec = canon end
+        if cls and (not d.class or d.class == "") then
+            d.class = RT.NormClass and RT.NormClass(cls) or cls
+            nCls = nCls + 1
+        end
+        local cur = d.role or ""
+        if cur == "" or cur == "?" or cur == "DPS" then
+            local r = RT3_RoleFromSpec(d.class or "", d.spec or "")
+            if r and r ~= cur then
+                d.role = r
+                nRole = nRole + 1
+            end
+        end
+    end
+    return nCls, nRole
 end
 
 -- ============================================================
@@ -12477,11 +12592,15 @@ RT.Modules.Register({
             text = "Auto-roles", width = 80, height = 22,
             color = { 0.20, 0.65, 0.35 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -384, -8 },
-            tooltip = "Sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper). Incoming replies fill the role automatically.",
+            tooltip = "Fills missing classes from specs (Holy1=Paladin...), sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper).",
             onClick = function()
                 if not RT3_RoleFromSpec then
                     RT.Print("|cffFF4444RT3_RoleFromSpec not loaded.|r") return
                 end
+                -- Passe 1 : classes déduites des spés + spés normalisées + rôles vides/DPS
+                local fixedCls = 0
+                if RT3_AutofixRoster then fixedCls = RT3_AutofixRoster() end
+                -- Passe 2 : force le rôle depuis la spé pour tout le monde
                 local db = RT.Store.Roster()
                 local changed, missing = 0, 0
                 for name, data in pairs(db) do
@@ -12495,13 +12614,14 @@ RT.Modules.Register({
                         end
                     end
                 end
-                if changed > 0 then RT.Store.Notify("roster") end
+                if changed > 0 or fixedCls > 0 then RT.Store.Notify("roster") end
+                local clsTxt = fixedCls > 0 and (fixedCls .. " class(es) detected, ") or ""
                 if missing > 0 then
-                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
+                    RT.Print("|cff44FF88Auto-roles: " .. clsTxt .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
                     if RT3_AskSpecs then RT3_AskSpecs(true)
                     else RT.Print("|cffFFAA00(WhisperBot module not loaded yet — open that tab once to activate.)|r") end
                 elseif changed > 0 then
-                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
+                    RT.Print("|cff44FF88Auto-roles: " .. clsTxt .. changed .. " player(s) updated (all specs known).|r")
                 else
                     RT.Print("|cffFFAA00Auto-roles: roster empty — scan or import the raid first.|r")
                 end

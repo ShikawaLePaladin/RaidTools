@@ -159,6 +159,118 @@ function RT3_RoleFromSpec(cls, spec)
 end
 
 -- ============================================================
+-- Déduction classe + spé canonique depuis un libellé de spé
+-- (imports Raid-Helper / softres / CSV, texte libre FR/EN).
+-- Raid-Helper suffixe "1" les doublons : Holy1/Protection1 =
+-- Paladin, Restoration1 = Shaman (Holy = Priest, Protection =
+-- Warrior, Restoration = Druid).
+-- Ordre = du plus spécifique au plus générique (match substring).
+-- ============================================================
+RT3_SPEC_INFO = {
+    -- Raid-Helper désambiguïsés (à tester AVANT la forme nue)
+    { "protection1",  "Prot",       "PALADIN" },
+    { "holy1",        "Holy",       "PALADIN" },
+    { "restoration1", "Resto",      "SHAMAN"  },
+    -- Druid
+    { "guardian",     "Feral Tank", "DRUID"   },
+    { "feral",        "Feral",      "DRUID"   },
+    { "farouche",     "Feral",      "DRUID"   },
+    { "balance",      "Balance",    "DRUID"   },
+    { "equilibre",    "Balance",    "DRUID"   },
+    { "boomkin",      "Balance",    "DRUID"   },
+    -- Hunter
+    { "beastmaster",  "BM",         "HUNTER"  },
+    { "beast",        "BM",         "HUNTER"  },
+    { "marksman",     "MM",         "HUNTER"  },
+    { "precision",    "MM",         "HUNTER"  },
+    { "survival",     "Surv",       "HUNTER"  },
+    { "survie",       "Surv",       "HUNTER"  },
+    -- Mage
+    { "arcane",       "Arcane",     "MAGE"    },
+    { "fire",         "Fire",       "MAGE"    },
+    { "frost",        "Frost",      "MAGE"    },
+    { "givre",        "Frost",      "MAGE"    },
+    -- Paladin
+    { "retribution",  "Retri",      "PALADIN" },
+    { "vindicte",     "Retri",      "PALADIN" },
+    { "retri",        "Retri",      "PALADIN" },
+    -- Priest
+    { "discipline",   "Disc",       "PRIEST"  },
+    { "disc",         "Disc",       "PRIEST"  },
+    { "shadow",       "Shadow",     "PRIEST"  },
+    { "ombre",        "Shadow",     "PRIEST"  },
+    { "smite",        "Disc",       "PRIEST"  },
+    -- Rogue
+    { "assassination","Assa",       "ROGUE"   },
+    { "combat",       "Combat",     "ROGUE"   },
+    { "subtlety",     "Subt",       "ROGUE"   },
+    { "finesse",      "Subt",       "ROGUE"   },
+    -- Shaman
+    { "elemental",    "Elem",       "SHAMAN"  },
+    { "elementaire",  "Elem",       "SHAMAN"  },
+    { "enhancement",  "Enh",        "SHAMAN"  },
+    { "amelioration", "Enh",        "SHAMAN"  },
+    { "enh",          "Enh",        "SHAMAN"  },
+    -- Warlock
+    { "affliction",   "Affli",      "WARLOCK" },
+    { "demonology",   "Demo",       "WARLOCK" },
+    { "demonologie",  "Demo",       "WARLOCK" },
+    { "destruction",  "Destro",     "WARLOCK" },
+    { "destro",       "Destro",     "WARLOCK" },
+    -- Warrior
+    { "arms",         "Arms",       "WARRIOR" },
+    { "armes",        "Arms",       "WARRIOR" },
+    { "fury",         "Fury",       "WARRIOR" },
+    { "furie",        "Fury",       "WARRIOR" },
+    -- Formes nues (Raid-Helper : classe "premier arrivé")
+    { "protection",   "Prot",       "WARRIOR" },
+    { "restoration",  "Resto",      "DRUID"   },
+    { "holy",         "Holy",       "PRIEST"  },
+    { "sacre",        "Holy",       nil       },
+    -- Abréviations ambiguës : spé canonique connue, classe indéterminée
+    { "resto",        "Resto",      nil       },
+    { "prot",         "Prot",       nil       },
+}
+
+-- Retourne (specCanonique, classeEN|nil) depuis un libellé libre.
+function RT3_SpecInfo(spec)
+    if not spec or spec == "" then return nil, nil end
+    local s = string.lower(spec)
+    for i = 1, table.getn(RT3_SPEC_INFO) do
+        local e = RT3_SPEC_INFO[i]
+        if string.find(s, e[1], 1, true) then return e[2], e[3] end
+    end
+    return nil, nil
+end
+
+-- Complète automatiquement le roster : classe manquante déduite de la
+-- spé, spé normalisée ("Protection1" → "Prot"), rôle affiné (vide/?/DPS
+-- → Tank/Heal/Melee/Ranged). Ne touche jamais un Tank/Heal déjà défini.
+-- Retourne (classesFixées, rôlesFixés).
+function RT3_AutofixRoster()
+    local db = RT_DB and RT_DB.roster
+    if not db then return 0, 0 end
+    local nCls, nRole = 0, 0
+    for _, d in pairs(db) do
+        local canon, cls = RT3_SpecInfo(d.spec)
+        if canon and d.spec ~= canon then d.spec = canon end
+        if cls and (not d.class or d.class == "") then
+            d.class = RT.NormClass and RT.NormClass(cls) or cls
+            nCls = nCls + 1
+        end
+        local cur = d.role or ""
+        if cur == "" or cur == "?" or cur == "DPS" then
+            local r = RT3_RoleFromSpec(d.class or "", d.spec or "")
+            if r and r ~= cur then
+                d.role = r
+                nRole = nRole + 1
+            end
+        end
+    end
+    return nCls, nRole
+end
+
+-- ============================================================
 -- Détection de spé via talents + échange entre joueurs
 -- ============================================================
 -- Ordre RÉEL des onglets de talents en 1.12 (indépendant de la langue).

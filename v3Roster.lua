@@ -209,11 +209,15 @@ RT.Modules.Register({
             text = "Auto-roles", width = 80, height = 22,
             color = { 0.20, 0.65, 0.35 },
             anchor = { "TOPRIGHT", panel, "TOPRIGHT", -384, -8 },
-            tooltip = "Sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper). Incoming replies fill the role automatically.",
+            tooltip = "Fills missing classes from specs (Holy1=Paladin...), sets each player's role from their spec, and requests the spec of anyone still missing one (RaidTools users reply silently, others by whisper).",
             onClick = function()
                 if not RT3_RoleFromSpec then
                     RT.Print("|cffFF4444RT3_RoleFromSpec not loaded.|r") return
                 end
+                -- Passe 1 : classes déduites des spés + spés normalisées + rôles vides/DPS
+                local fixedCls = 0
+                if RT3_AutofixRoster then fixedCls = RT3_AutofixRoster() end
+                -- Passe 2 : force le rôle depuis la spé pour tout le monde
                 local db = RT.Store.Roster()
                 local changed, missing = 0, 0
                 for name, data in pairs(db) do
@@ -227,13 +231,14 @@ RT.Modules.Register({
                         end
                     end
                 end
-                if changed > 0 then RT.Store.Notify("roster") end
+                if changed > 0 or fixedCls > 0 then RT.Store.Notify("roster") end
+                local clsTxt = fixedCls > 0 and (fixedCls .. " class(es) detected, ") or ""
                 if missing > 0 then
-                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
+                    RT.Print("|cff44FF88Auto-roles: " .. clsTxt .. changed .. " role(s) set ; requesting " .. missing .. " missing spec(s)...|r")
                     if RT3_AskSpecs then RT3_AskSpecs(true)
                     else RT.Print("|cffFFAA00(WhisperBot module not loaded yet — open that tab once to activate.)|r") end
                 elseif changed > 0 then
-                    RT.Print("|cff44FF88Auto-roles: " .. changed .. " player(s) updated (all specs known).|r")
+                    RT.Print("|cff44FF88Auto-roles: " .. clsTxt .. changed .. " player(s) updated (all specs known).|r")
                 else
                     RT.Print("|cffFFAA00Auto-roles: roster empty — scan or import the raid first.|r")
                 end
