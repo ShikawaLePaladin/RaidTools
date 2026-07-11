@@ -127,7 +127,7 @@ end
 
 function RT_ImportSoftResJSON(jsonStr)
     if not jsonStr or jsonStr == "" then
-        return false, "JSON vide"
+        return false, "Empty paste"
     end
 
     -- Nettoyer sauts de ligne
@@ -135,6 +135,13 @@ function RT_ImportSoftResJSON(jsonStr)
     jsonStr = string.gsub(jsonStr, "\r",   " ")
     jsonStr = string.gsub(jsonStr, "\n",   " ")
     jsonStr = string.gsub(jsonStr, "\t",   " ")
+
+    -- Export "Composition Tool" collé ici ? On délègue au bon parseur.
+    if not string.find(jsonStr, '"signUps"', 1, true)
+       and string.find(jsonStr, '"slots"', 1, true)
+       and string.find(jsonStr, '"specName"', 1, true) then
+        return RT_ImportRaidHelperComp(jsonStr)
+    end
 
     -- Extraire les metadonnees globales
     local date  = RT_GetField(jsonStr, "date")
@@ -146,13 +153,13 @@ function RT_ImportSoftResJSON(jsonStr)
     -- Localiser et extraire le contenu du tableau signUps
     local signUpsStr = RT_FindArrayStr(jsonStr, "signUps")
     if not signUpsStr or string.len(signUpsStr) < 5 then
-        return false, "Tableau signUps introuvable"
+        return false, "No 'signUps' array found — paste a softres/Raid-Helper signups export (or a Comp Tool export)"
     end
 
     -- Extraire les objets individuels du tableau signUps
     local rawObjects = RT_ExtractObjects(signUpsStr)
     if table.getn(rawObjects) == 0 then
-        return false, "Aucun objet dans signUps"
+        return false, "No players found in signUps"
     end
 
     RT_DB         = RT_DB         or {}
