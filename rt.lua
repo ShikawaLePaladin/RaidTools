@@ -11387,6 +11387,8 @@ end
 
 
 
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -12865,7 +12867,7 @@ RT.Modules.Register({
         local impTitle = imp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         impTitle:SetPoint("TOPLEFT", imp, "TOPLEFT", 10, -8)
         impTitle:SetWidth(660) impTitle:SetJustifyH("LEFT")
-        impTitle:SetText("|cffFFD700Import roster|r — paste the |cff88CCFFraidres (CSV Attendees)|r or |cff88CCFFsoftres (JSON)|r export, then click Import.  (Ctrl+V to paste)")
+        impTitle:SetText("|cffFFD700Import roster|r — paste |cff88CCFFraidres CSV|r, |cff88CCFFsignups JSON|r (softres / Raid-Helper) or |cff88CCFFComp Tool JSON|r (fills the Groups too). Format is auto-detected.  (Ctrl+V)")
 
         -- Fond + zone de collage SCROLLABLE (le ScrollFrame découpe le texte,
         -- sinon une EditBox multiligne déborde par-dessus les boutons).
@@ -12915,7 +12917,16 @@ RT.Modules.Register({
             end
             local first = string.sub(trimmed, 1, 1)
             local fn, label
-            if first == "{" or first == "[" then fn, label = RT_ImportSoftResJSON, "JSON"
+            if first == "{" or first == "[" then
+                -- 3 formats JSON auto-détectés : signups (signUps) / Comp Tool (slots)
+                if string.find(trimmed, '"signUps"', 1, true) then
+                    fn, label = RT_ImportSoftResJSON, "Signups JSON"
+                elseif string.find(trimmed, '"slots"', 1, true)
+                   and string.find(trimmed, '"specName"', 1, true) then
+                    fn, label = RT_ImportRaidHelperComp, "Comp Tool JSON"
+                else
+                    fn, label = RT_ImportSoftResJSON, "JSON"
+                end
             else fn, label = RT_ImportRosterOnly, "CSV" end
             if not fn then
                 impStatus:SetText("|cffFF4444" .. label .. " parser unavailable.|r")
@@ -12934,6 +12945,7 @@ RT.Modules.Register({
                 RT.Print("|cff44FF88[Import] " .. msg .. "|r")
                 eb:SetText("")
                 RT.Store.Notify("roster")
+                RT.Store.Notify("groups")
                 imp:Hide()
             else
                 impStatus:SetText("|cffFF4444Failed: " .. tostring(b) .. "|r")
