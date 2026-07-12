@@ -13,6 +13,37 @@ local AI_QUEUE     = {}   -- {name, time}
 local AI_INVITED   = {}   -- {name = true}
 local AI_ROLE_MAP  = {}   -- {name = "Tank"/"Heal"/"DPS"}
 
+-- Réinvitations : joueurs pas encore dans le raid (hors-ligne, groupés...)
+local AI_PENDING        = {}   -- { [name] = { tries, grouped, groupedMsgSent } }
+local AI_RETRY_INTERVAL = 30   -- secondes entre deux tentatives
+local AI_MAX_TRIES      = 10   -- ~5 min de retries avant abandon
+local AI_LastRetry      = 0
+
+local function AI_Whisper(target, text)
+    local lang = GetDefaultLanguage and GetDefaultLanguage("player") or nil
+    pcall(SendChatMessage, "[RT] " .. text, "WHISPER", lang, target)
+end
+
+-- Le joueur est-il déjà dans NOTRE groupe/raid ?
+function RT_AI.IsGroupedWithUs(name)
+    local n = GetNumRaidMembers and GetNumRaidMembers() or 0
+    for i = 1, n do
+        if GetRaidRosterInfo(i) == name then return true end
+    end
+    local np = GetNumPartyMembers and GetNumPartyMembers() or 0
+    for i = 1, np do
+        if UnitName("party" .. i) == name then return true end
+    end
+    return false
+end
+
+-- Envoie une invitation et l'enregistre pour retry éventuel
+function RT_AI.DoInvite(name)
+    AI_PENDING[name] = AI_PENDING[name] or { tries = 0 }
+    AI_PENDING[name].tries = AI_PENDING[name].tries + 1
+    pcall(InviteUnit or InviteByName, name)
+end
+
 -- ── Démarre l'auto-invite ──────────────────────────────────
 function RT_AI.Start(keyword, maxPlayers)
     AI_KEYWORD = string.lower(RT_BTrim and RT_BTrim(keyword or "inv") or (keyword or "inv"))
@@ -20,11 +51,9 @@ function RT_AI.Start(keyword, maxPlayers)
     AI_ACTIVE  = true
     AI_QUEUE   = {}
     AI_INVITED = {}
-    RT_Print("|cff88CCFF[AutoInvite]|r Actif. Mot-clé: |cffFFD700" .. AI_KEYWORD .. "|r — max " .. AI_MAX .. " joueurs.")
-    -- Annonce en /say ou /yell selon la préférence
-    local nRaid  = GetNumRaidMembers  and GetNumRaidMembers()  or 0
-    local nParty = GetNumPartyMembers and GetNumPartyMembers() or 0
-    local msg = "[RT] Tape '" .. AI_KEYWORD .. "' en MP pour rejoindre le raid! (" .. AI_MAX .. " places)"
+    AI_PENDING = {}
+    RT_Print("|cff88CCFF[AutoInvite]|r Active. Keyword: |cffFFD700" .. AI_KEYWORD .. "|r — max " .. AI_MAX .. " players.")
+    local msg = "[RT] Whisper '" .. AI_KEYWORD .. "' to join the raid! (" .. AI_MAX .. " spots)"
     if RT_DB and RT_DB.ai and RT_DB.ai.lfmChannel then
         pcall(SendChatMessage, msg, RT_DB.ai.lfmChannel)
     end
@@ -32,8 +61,9 @@ function RT_AI.Start(keyword, maxPlayers)
 end
 
 function RT_AI.Stop()
-    AI_ACTIVE = false
-    RT_Print("|cff88CCFF[AutoInvite]|r Arrêté. " .. table.getn(AI_QUEUE) .. " joueur(s) invité(s).")
+    AI_ACTIVE  = false
+    AI_PENDING = {}
+    RT_Print("|cff88CCFF[AutoInvite]|r Stopped. " .. table.getn(AI_QUEUE) .. " player(s) invited.")
     RT_AI.UpdateUI()
 end
 
@@ -45,32 +75,42 @@ function RT_AI.OnWhisper(sender, message)
     if not sender or sender == "" then return end
 
     local msg = string.lower(RT_BTrim and RT_BTrim(message) or message)
-    if msg ~= AI_KEYWORD then return end
+    -- '+1' = "je suis libre maintenant, réinvite-moi" (joueur qui était groupé)
+    if msg ~= AI_KEYWORD and msg ~= "+1" then return end
 
     -- Déjà invité ?
     if AI_INVITED[sender] then
-        local lang = GetDefaultLanguage and GetDefaultLanguage("player") or nil
-        pcall(SendChatMessage, "[RT] Tu as déjà été invité(e)!", "WHISPER", lang, sender)
+        if RT_AI.IsGroupedWithUs(sender) then
+            AI_Whisper(sender, "You're already in the raid!")
+            return
+        end
+        -- Invité mais toujours pas dans le raid (était groupé / hors-ligne /
+        -- a décliné) : on retente.
+        if AI_PENDING[sender] then
+            AI_PENDING[sender].grouped = nil
+            AI_PENDING[sender].groupedMsgSent = nil
+        end
+        RT_AI.DoInvite(sender)
+        AI_Whisper(sender, "Invite sent again!")
+        RT_Print("|cff88CCFF[AI]|r " .. sender .. " re-invited.")
         return
     end
 
     -- Raid plein ?
     local nRaid = GetNumRaidMembers and GetNumRaidMembers() or 0
     if nRaid >= AI_MAX then
-        local lang = GetDefaultLanguage and GetDefaultLanguage("player") or nil
-        pcall(SendChatMessage, "[RT] Désolé, le raid est complet (" .. AI_MAX .. "/" .. AI_MAX .. ")", "WHISPER", lang, sender)
-        RT_Print("|cffFFAA00[AI]|r Raid plein, " .. sender .. " refusé.")
+        AI_Whisper(sender, "Sorry, the raid is full (" .. AI_MAX .. "/" .. AI_MAX .. ")")
+        RT_Print("|cffFFAA00[AI]|r Raid full, " .. sender .. " declined.")
         return
     end
 
     -- Invite
     table.insert(AI_QUEUE, { name=sender, time=GetTime and GetTime() or 0 })
     AI_INVITED[sender] = true
-    pcall(InviteUnit, sender)
+    RT_AI.DoInvite(sender)
 
-    local lang = GetDefaultLanguage and GetDefaultLanguage("player") or nil
-    pcall(SendChatMessage, "[RT] Invitation envoyée! Bienvenue.", "WHISPER", lang, sender)
-    RT_Print("|cff88CCFF[AI]|r " .. sender .. " invité(e) (#" .. table.getn(AI_QUEUE) .. ")")
+    AI_Whisper(sender, "Invite sent! Welcome.")
+    RT_Print("|cff88CCFF[AI]|r " .. sender .. " invited (#" .. table.getn(AI_QUEUE) .. ")")
 
     RT_AI.UpdateUI()
 
@@ -80,6 +120,61 @@ function RT_AI.OnWhisper(sender, message)
         if RT_RosterDisplay then RT_RosterDisplay() end
     end
 end
+
+-- ── Messages système : détecte "déjà groupé" / "introuvable" ──
+-- Quand l'invite échoue parce que le joueur est déjà dans un groupe,
+-- on le prévient par whisper : il répond '+1' (ou le mot-clé) quand il
+-- est libre et on le réinvite.
+local AI_SysFrame = CreateFrame("Frame", "RT_AISysFrame")
+AI_SysFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+AI_SysFrame:SetScript("OnEvent", function()
+    if not AI_ACTIVE then return end
+    local m = arg1 or ""
+
+    -- EN "X is already in a group." / FR "X est déjà dans un groupe."
+    local _, _, who = string.find(m, "^(%S+) is already in a group")
+    if not who then _, _, who = string.find(m, "^(%S+) est d.j. dans un groupe") end
+    if who and AI_INVITED[who] then
+        local p = AI_PENDING[who] or { tries = 0 }
+        AI_PENDING[who] = p
+        p.grouped = true
+        if not p.groupedMsgSent then
+            p.groupedMsgSent = true
+            AI_Whisper(who, "You're currently in another group. Reply '+1' (or '"
+                .. AI_KEYWORD .. "') when you're free and I'll re-invite you.")
+            RT_Print("|cffFFAA00[AI]|r " .. who .. " is already grouped — asked to reply '+1' when free.")
+        end
+        return
+    end
+
+    -- EN "Cannot find player 'X'." (hors-ligne) → le retry le rattrapera au login
+    local _, _, off = string.find(m, "find player '([^']+)'")
+    if off and AI_PENDING[off] then
+        AI_PENDING[off].offline = true
+    end
+end)
+
+-- ── Retry : réinvite toutes les 30 s (rattrape aussi les logins) ──
+local AI_RetryFrame = CreateFrame("Frame", "RT_AIRetryFrame")
+AI_RetryFrame:SetScript("OnUpdate", function()
+    if not AI_ACTIVE then return end
+    if not (RT_DB and RT_DB.ai and RT_DB.ai.retry30) then return end
+    local now = GetTime and GetTime() or 0
+    if (now - AI_LastRetry) < AI_RETRY_INTERVAL then return end
+    AI_LastRetry = now
+    for name, p in pairs(AI_PENDING) do
+        if RT_AI.IsGroupedWithUs(name) then
+            AI_PENDING[name] = nil            -- il est arrivé : terminé
+        elseif p.grouped then
+            -- groupé ailleurs : on ne spamme pas, il doit répondre '+1'
+        elseif p.tries >= AI_MAX_TRIES then
+            AI_PENDING[name] = nil            -- abandon après ~5 min
+            RT_Print("|cff888888[AI] " .. name .. " never joined — giving up.|r")
+        else
+            RT_AI.DoInvite(name)              -- hors-ligne au moment T → invité au login
+        end
+    end
+end)
 
 -- ── Frame whisper listener ─────────────────────────────────
 local AI_ListenFrame = CreateFrame("Frame", "RT_AIListenFrame", UIParent)
@@ -159,17 +254,18 @@ function RT_BuildUIAutoInvite(parent)
         lfmDesc      = "Molten Core",
         lfmChannel   = "SAY",
         autoAnnounce = false,
+        retry30      = false,
     }
 
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -4)
-    title:SetText("|cff88CCFFAuto-Invite|r  —  Invite automatiquement par mot-clé en PM")
+    title:SetText("|cff88CCFFAuto-Invite|r  —  invites automatically on whisper keyword")
     title:SetTextColor(0.3, 0.8, 1.0)
 
     -- Keyword
     local kwLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     kwLabel:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -26)
-    kwLabel:SetText("Mot-clé:")
+    kwLabel:SetText("Keyword:")
 
     local kwEdit = CreateFrame("EditBox", "RT_AIKeywordEdit", p, "InputBoxTemplate")
     kwEdit:SetPoint("LEFT", kwLabel, "RIGHT", 6, 0)
@@ -186,7 +282,7 @@ function RT_BuildUIAutoInvite(parent)
     -- Max players
     local maxLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     maxLabel:SetPoint("LEFT", kwEdit, "RIGHT", 12, 0)
-    maxLabel:SetText("Max joueurs:")
+    maxLabel:SetText("Max players:")
 
     local maxEdit = CreateFrame("EditBox", "RT_AIMaxEdit", p, "InputBoxTemplate")
     maxEdit:SetPoint("LEFT", maxLabel, "RIGHT", 6, 0)
@@ -205,7 +301,7 @@ function RT_BuildUIAutoInvite(parent)
     startBtn:SetPoint("LEFT", maxEdit, "RIGHT", 12, 0)
     startBtn:SetWidth(80)
     startBtn:SetHeight(22)
-    startBtn:SetText("Démarrer")
+    startBtn:SetText("Start")
     local sTex = startBtn:GetNormalTexture()
     if sTex then sTex:SetVertexColor(0.1, 0.7, 0.2) end
     startBtn:SetScript("OnClick", function()
@@ -222,15 +318,39 @@ function RT_BuildUIAutoInvite(parent)
     stopBtn:SetPoint("LEFT", startBtn, "RIGHT", 6, 0)
     stopBtn:SetWidth(72)
     stopBtn:SetHeight(22)
-    stopBtn:SetText("Arrêter")
+    stopBtn:SetText("Stop")
     local stTex = stopBtn:GetNormalTexture()
     if stTex then stTex:SetVertexColor(0.8, 0.2, 0.1) end
     stopBtn:SetScript("OnClick", function() RT_AI.Stop() end)
 
+    -- Toggle : réinvitation automatique toutes les 30 s
+    local retryBtn = CreateFrame("Button", "RT_AIRetryBtn", p, "UIPanelButtonTemplate")
+    retryBtn:SetPoint("LEFT", stopBtn, "RIGHT", 10, 0)
+    retryBtn:SetWidth(110)
+    retryBtn:SetHeight(22)
+    local function retryPaint()
+        local tex = retryBtn:GetNormalTexture()
+        if RT_DB.ai.retry30 then
+            retryBtn:SetText("Retry 30s: ON")
+            if tex then tex:SetVertexColor(0.1, 0.6, 0.2) end
+        else
+            retryBtn:SetText("Retry 30s: OFF")
+            if tex then tex:SetVertexColor(0.4, 0.4, 0.4) end
+        end
+    end
+    retryBtn:SetScript("OnClick", function()
+        RT_DB.ai.retry30 = not RT_DB.ai.retry30
+        retryPaint()
+        if RT_DB.ai.retry30 then
+            RT_Print("|cff88CCFF[AI]|r Retry ON: pending players are re-invited every 30s (also catches players logging in). Players grouped elsewhere get a whisper and must reply '+1'.")
+        end
+    end)
+    retryPaint()
+
     -- Description LFM
     local lfmLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     lfmLabel:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -52)
-    lfmLabel:SetText("Annonce LFM:")
+    lfmLabel:SetText("LFM message:")
 
     local lfmEdit = CreateFrame("EditBox", "RT_AILFMEdit", p, "InputBoxTemplate")
     lfmEdit:SetPoint("LEFT", lfmLabel, "RIGHT", 6, 0)
@@ -247,7 +367,7 @@ function RT_BuildUIAutoInvite(parent)
     -- Channel LFM
     local chanLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     chanLabel:SetPoint("LEFT", lfmEdit, "RIGHT", 8, 0)
-    chanLabel:SetText("Canal:")
+    chanLabel:SetText("Channel:")
 
     local chanEdit = CreateFrame("EditBox", "RT_AIChanEdit", p, "InputBoxTemplate")
     chanEdit:SetPoint("LEFT", chanLabel, "RIGHT", 6, 0)
@@ -266,7 +386,7 @@ function RT_BuildUIAutoInvite(parent)
     announceBtn:SetPoint("LEFT", chanEdit, "RIGHT", 8, 0)
     announceBtn:SetWidth(80)
     announceBtn:SetHeight(20)
-    announceBtn:SetText("Annoncer")
+    announceBtn:SetText("Announce")
     announceBtn:SetScript("OnClick", function()
         local desc    = lfmEdit:GetText()
         local channel = string.upper(RT_BTrim and RT_BTrim(chanEdit:GetText()) or chanEdit:GetText())
@@ -287,7 +407,7 @@ function RT_BuildUIAutoInvite(parent)
     -- Liste des invités
     local queueTitle = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     queueTitle:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -96)
-    queueTitle:SetText("|cffCCCCCCFile d'invitation|r")
+    queueTitle:SetText("|cffCCCCCCInvite queue|r")
 
     local queueScroll = CreateFrame("ScrollFrame", "RT_AIQueueScroll", p, "UIPanelScrollFrameTemplate")
     queueScroll:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -112)
@@ -321,7 +441,7 @@ function RT_BuildUIAutoInvite(parent)
         removeBtn:SetPoint("LEFT", nameLbl, "RIGHT", 4, 0)
         removeBtn:SetWidth(60)
         removeBtn:SetHeight(16)
-        removeBtn:SetText("Retirer")
+        removeBtn:SetText("Remove")
         local idx = i
         removeBtn:SetScript("OnClick", function()
             if AI_QUEUE[idx] then

@@ -130,10 +130,15 @@ RT.Modules.Register({
         local preview     -- forward ref
         local refreshMT   -- forward ref (zone tanks MT)
 
-        -- copyGroups=true → recopie les groupes calculés dans le preset Groupes
-        -- (Setup Raid / PUG). Calculer ne touche PAS aux groupes (préserve un
-        -- "Import Raid" fait manuellement dans l'onglet Groupes).
-        local function recompute(fn, copyGroups)
+        -- Les groupes ne sont recopiés dans l'onglet Groupes QUE si le toggle
+        -- "Groups: UPDATE" est actif (défaut KEEP : préserve un import Comp
+        -- Tool / un placement manuel).
+        local function wantCopyGroups()
+            local db = RT.Store.DB()
+            return db.v3assign_copygroups and true or false
+        end
+
+        local function recompute(fn)
             local n = 0
             for _ in pairs(RT.Store.Roster()) do n = n + 1 end
             if n == 0 then
@@ -141,7 +146,8 @@ RT.Modules.Register({
                 return
             end
             if fn then fn() end
-            if copyGroups then applyAssignToGroups() end
+            if wantCopyGroups() then applyAssignToGroups()
+            else RT.Print("|cff888888[Assign] Groups kept as-is (toggle 'Groups: KEEP' to change).|r") end
             applyAssignToBossDefault()
             if refreshMT then refreshMT() end
             if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
@@ -158,11 +164,11 @@ RT.Modules.Register({
                     local n = (GetNumRaidMembers and GetNumRaidMembers()) or 0
                     if n > 0 then RT.ScanRaid() end
                 end
-                -- 2. Calcule + applique (sans annoncer) + copie dans Groupes
-                recompute(RT_AA_PackGuild, true)
+                -- 2. Calcule + applique (sans annoncer)
+                recompute(RT_AA_PackGuild)
                 RT.Print("|cff88FF88[RT] Setup done — review and click Announce when ready.|r")
             end,
-            tooltip = "Scan raid → compute assignment → copy groups. Does NOT announce.",
+            tooltip = "Scan raid → compute assignment. Does NOT announce. Copies groups only if 'Groups: UPDATE'.",
         })
 
         -- Ligne 1 suite : boutons individuels
@@ -170,8 +176,8 @@ RT.Modules.Register({
             text = "Compute", width = 82, height = 24,
             color = { 0.20, 0.60, 0.30 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 142, -32 },
-            onClick = function() recompute(RT_AA_PackGuild, true) end,
-            tooltip = "Recomputes tanks/heals/buffs/groups and applies to Boss.",
+            onClick = function() recompute(RT_AA_PackGuild) end,
+            tooltip = "Recomputes tanks/heals/buffs and applies to Boss. Copies groups only if 'Groups: UPDATE'.",
         })
         RT.UI.Button(panel, {
             text = "Announce", width = 82, height = 24,
@@ -187,23 +193,85 @@ RT.Modules.Register({
             text = "PUG Pack", width = 82, height = 24,
             color = { 0.40, 0.70, 1.00 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 314, -32 },
-            onClick = function() recompute(RT_AA_PackPUG, true) end,
-            tooltip = "Compute + copy groups + announce + whisper each player (PUG mode).",
+            onClick = function() recompute(RT_AA_PackPUG) end,
+            tooltip = "Compute + announce + whisper each player (PUG mode). Copies groups only if 'Groups: UPDATE'.",
         })
         RT.UI.Button(panel, {
             text = "Whisper all", width = 82, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_WhisperPersonal(RT_AA_LAST)
-                else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
+                else RT.Print("|cffFFAA00Compute an assignment first.|r") end
             end,
             tooltip = "Whispers each player their role/group/healing.",
         })
 
+        -- Toggle : recopier (ou non) les groupes calculés dans l'onglet Groupes
+        local grpTgl = RT.UI.Button(panel, {
+            text = "Groups: KEEP", width = 108, height = 24,
+            color = { 0.30, 0.40, 0.55 },
+            anchor = { "TOPLEFT", panel, "TOPLEFT", 486, -32 },
+            tooltip = "KEEP (default): Compute/Setup never touch the Groups tab — your Comp Tool import or manual placement is preserved. UPDATE: computed groups overwrite the active preset.",
+        })
+        local function grpTglPaint()
+            local db  = RT.Store.DB()
+            local tex = grpTgl:GetNormalTexture()
+            if db.v3assign_copygroups then
+                grpTgl:SetText("Groups: UPDATE")
+                if tex then tex:SetVertexColor(0.60, 0.35, 0.10) end
+            else
+                grpTgl:SetText("Groups: KEEP")
+                if tex then tex:SetVertexColor(0.30, 0.40, 0.55) end
+            end
+        end
+        grpTgl:SetScript("OnClick", function()
+            local db = RT.Store.DB()
+            db.v3assign_copygroups = not db.v3assign_copygroups
+            grpTglPaint()
+        end)
+        grpTglPaint()
+
+        -- ── Toggles de buffs (inclus/exclus des annonces et whispers) ──
+        local BUFF_TOGGLES = {
+            { key="fort",      label="Fortitude" },
+            { key="spirit",    label="Spirit"    },
+            { key="motw",      label="MotW"      },
+            { key="arcane",    label="Arc.Int"   },
+            { key="soulstone", label="Soulstone" },
+            { key="curses",    label="Curses"    },
+        }
+        local bl = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+        bl:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -64)
+        bl:SetText("|cff69CCF0Buffs:|r")
+        for i = 1, table.getn(BUFF_TOGGLES) do
+            local t = BUFF_TOGGLES[i]
+            local b = RT.UI.Button(panel, {
+                text = t.label, width = 74, height = 18,
+                anchor = { "TOPLEFT", panel, "TOPLEFT", 54 + (i-1)*78, -61 },
+                tooltip = "Green = included in assignments, announces and whispers. Red = disabled. Recompute after changing.",
+            })
+            local key = t.key
+            local function paintTgl()
+                local o = RT_AA_BuffOpts and RT_AA_BuffOpts() or {}
+                local tex = b:GetNormalTexture()
+                if tex then
+                    if o[key] then tex:SetVertexColor(0.15, 0.55, 0.20)
+                    else tex:SetVertexColor(0.50, 0.15, 0.10) end
+                end
+            end
+            b:SetScript("OnClick", function()
+                if not RT_AA_BuffOpts then return end
+                local o = RT_AA_BuffOpts()
+                o[key] = not o[key]
+                paintTgl()
+            end)
+            paintTgl()
+        end
+
         -- ── Zone éditable : TANKS + SOINS (attribution manuelle) ──
         local MT_MARK = { "Skull", "Cross", "Square", "Moon" }
         local helpFS = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-        helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -60)
+        helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -84)
         helpFS:SetText("|cff888888Click a filled slot = |cffFFD700select|r (green). Click another = |cffFFD700swap|r. Empty slot = type a name. Tanks → MT1 Skull · MT2 Cross · MT3 Square · MT4 Moon|r")
 
         local tankBoxes, htBoxes, hrBoxes = {}, {}, {}
@@ -252,6 +320,7 @@ RT.Modules.Register({
                             RT_AA_LAST[selSlot.store][selSlot.idx] = nameA
                             slotDeselect()
                             applyAssignToBossDefault()
+                            if refreshMT then refreshMT() end
                             if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
                         end
                     else
@@ -287,6 +356,7 @@ RT.Modules.Register({
                     RT_AA_LAST[sl.store] = RT_AA_LAST[sl.store] or {}
                     RT_AA_LAST[sl.store][sl.idx] = name
                     applyAssignToBossDefault()
+                    if refreshMT then refreshMT() end
                     if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
                 end
                 RT3_ASSIGN_SLOT = nil
@@ -295,9 +365,9 @@ RT.Modules.Register({
             timeout     = 0, whileDead = 1, hideOnEscape = 1,
         }
 
-        tankBoxes = mkBoxes(-78,  "Tanks",  "|cffFF7777", "tanks",    true)
-        htBoxes   = mkBoxes(-102, "T.Heal", "|cff66DD66", "healTank", false)
-        hrBoxes   = mkBoxes(-126, "S.Raid", "|cff66DD66", "healRaid", false)
+        tankBoxes = mkBoxes(-102, "Tanks",  "|cffFF7777", "tanks",    true)
+        htBoxes   = mkBoxes(-126, "T.Heal", "|cff66DD66", "healTank", false)
+        hrBoxes   = mkBoxes(-150, "H.Raid", "|cff66DD66", "healRaid", false)
 
         local function applySlotColor(btn, name)
             local fs = btn:GetFontString()
@@ -326,8 +396,8 @@ RT.Modules.Register({
 
         preview = RT.UI.TextScroll(panel, {
             name = "RT3_AssignPreview",
-            anchor = { "TOPLEFT", panel, "TOPLEFT", 8, -152 },
-            width = 690, height = 272, font = "GameFontHighlightSmall",
+            anchor = { "TOPLEFT", panel, "TOPLEFT", 8, -176 },
+            width = 690, height = 248, font = "GameFontHighlightSmall",
         })
         preview.scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 8)
         panel._preview = preview

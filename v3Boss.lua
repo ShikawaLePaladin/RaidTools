@@ -192,12 +192,14 @@ RT.Modules.Register({
     build = function(panel)
 
         -- ── GAUCHE : liste boss par raid ─────────────────────────
+        -- Largeur 212 (et pas 232) : la scrollbar du template dépasse de
+        -- ~20 px À DROITE du cadre — elle doit rester hors du panneau détail (x=246).
         local listScroll, listChild = RT.UI.ScrollArea(panel, {
             name="RT3_BossListScroll",
             anchor={"TOPLEFT", panel, "TOPLEFT", 6, -10},
-            childWidth=220,
+            childWidth=200,
         })
-        listScroll:SetWidth(232)
+        listScroll:SetWidth(212)
         listScroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 6, 8)
 
         -- ── DROITE : panneau detail ───────────────────────────────
@@ -743,15 +745,20 @@ RT.Modules.Register({
         -- Pools de frames pour pouvoir reconstruire (ajout de trash)
         local hdrPool, btnPool = {}, {}
 
+        -- Sections repliables : clic sur un en-tête de raid = replier/déplier
+        local collapsed = {}
+
         local function getHdr(i)
             local hf = hdrPool[i]
             if not hf then
-                hf = CreateFrame("Frame", nil, listChild)
-                hf:SetWidth(218) hf:SetHeight(17)
+                hf = CreateFrame("Button", nil, listChild)
+                hf:SetWidth(198) hf:SetHeight(17)
                 local hbg = hf:CreateTexture(nil,"BACKGROUND")
                 hbg:SetAllPoints() hbg:SetTexture(0.10,0.08,0.15,0.95)
                 hf._fs = hf:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
                 hf._fs:SetPoint("LEFT", hf, "LEFT", 5, 0)
+                hf:EnableMouseWheel(true)
+                hf:SetScript("OnMouseWheel", function() RT3_FwdWheel(this, arg1) end)
                 hdrPool[i] = hf
             end
             return hf
@@ -761,7 +768,7 @@ RT.Modules.Register({
             local btn = btnPool[i]
             if not btn then
                 btn = CreateFrame("Button", nil, listChild, "UIPanelButtonTemplate")
-                btn:SetWidth(210) btn:SetHeight(16)
+                btn:SetWidth(190) btn:SetHeight(16)
                 local bfs = btn:GetFontString()
                 if bfs then bfs:SetJustifyH("LEFT"); bfs:SetPoint("LEFT",btn,"LEFT",4,0) end
                 btnPool[i] = btn
@@ -797,10 +804,17 @@ RT.Modules.Register({
                 local hf = getHdr(hi)
                 hf:ClearAllPoints()
                 hf:SetPoint("TOPLEFT", listChild, "TOPLEFT", 2, -y)
-                hf._fs:SetText("|cffFFD700"..raid.."|r")
+                local mark = collapsed[raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                hf._fs:SetText(mark .. "|cffFFD700" .. raid .. "|r")
+                local rname = raid
+                hf:SetScript("OnClick", function()
+                    collapsed[rname] = not collapsed[rname]
+                    buildBossList()
+                end)
                 hf:Show()
                 y = y + 19
 
+                if not collapsed[raid] then
                 -- Boss (depuis les tactiques)
                 local bosses = grps[raid] or {}
                 for bi = 1, table.getn(bosses) do
@@ -847,6 +861,7 @@ RT.Modules.Register({
                 end
 
                 y = y + 4
+                end -- not collapsed
             end
             listChild:SetHeight(y + 4)
         end

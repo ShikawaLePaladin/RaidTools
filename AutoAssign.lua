@@ -337,23 +337,48 @@ end
 -- ============================================================
 -- RT_AA_AssignBuffs : qui buffe qui (avec répartition de groupes)
 -- ============================================================
+-- Options d'activation des buffs dans les annonces/whispers (Assign tab)
+function RT_AA_BuffOpts()
+    RT_DB = RT_DB or {}
+    if not RT_DB.v3buffopts then
+        RT_DB.v3buffopts = { fort=true, spirit=true, motw=true, arcane=true, soulstone=true, curses=true }
+    end
+    local o = RT_DB.v3buffopts
+    if o.fort      == nil then o.fort      = true end
+    if o.spirit    == nil then o.spirit    = true end
+    if o.motw      == nil then o.motw      = true end
+    if o.arcane    == nil then o.arcane    = true end
+    if o.soulstone == nil then o.soulstone = true end
+    if o.curses    == nil then o.curses    = true end
+    return o
+end
+
 function RT_AA_AssignBuffs(analysis, out)
     out = out or {}
     out.buffs = {}
+    local opts = RT_AA_BuffOpts()
 
-    local priests, druids, mages, warlocks, warriors = {}, {}, {}, {}, {}
+    -- Prêtres triés par spé : heals prioritaires pour Fortitude,
+    -- les Ombre prennent Esprit Divin (Prayer of Spirit).
+    local healPriests, shadowPriests, otherPriests = {}, {}, {}
+    local druids, mages, warlocks = {}, {}, {}
     for i = 1, table.getn(analysis.all) do
         local e = analysis.all[i]
+        local ls = AA_Low(e.spec or "")
         if e.class == "Priest" then
-            table.insert(priests, e.name)
-        elseif e.class == "Druid" and (e.role=="Heal" or string.find(AA_Low(e.spec or ""),"resto")) then
+            if string.find(ls, "shadow") or string.find(ls, "ombre") then
+                table.insert(shadowPriests, e.name)
+            elseif e.role == "Heal" or string.find(ls, "holy") or string.find(ls, "disc") then
+                table.insert(healPriests, e.name)
+            else
+                table.insert(otherPriests, e.name)
+            end
+        elseif e.class == "Druid" and (e.role=="Heal" or string.find(ls,"resto")) then
             table.insert(druids, e.name)
         elseif e.class == "Mage" then
             table.insert(mages, e.name)
         elseif e.class == "Warlock" then
             table.insert(warlocks, e.name)
-        elseif e.class == "Warrior" and (e.role=="Tank" or string.find(AA_Low(e.spec or ""),"prot")) then
-            table.insert(warriors, e.name)
         end
     end
 
@@ -369,21 +394,32 @@ function RT_AA_AssignBuffs(analysis, out)
             local ge = gs + perP - 1
             if i <= extra then ge = ge + 1 end
             local scope
-            if n == 1 then scope = "Raid entier"
+            if n == 1 then scope = "whole raid"
             else scope = "Grp " .. gs .. "-" .. ge end
             table.insert(out.buffs, { name=providers[i], buff=buffName, scope=scope })
             gs = ge + 1
         end
     end
 
-    splitAdd(priests,  "Prière de Forteresse")
-    splitAdd(priests,  "Esprit Divin")
-    splitAdd(druids,   "Don des Fauves")
-    splitAdd(mages,    "Brillance Arcanique")
-    -- (Cri de Guerre retiré : buff de classe trivial, allège l'annonce)
+    -- Fortitude : prêtres heal d'abord, puis les autres, les Ombre en dernier recours
+    local fortProviders = {}
+    for i = 1, table.getn(healPriests)  do table.insert(fortProviders, healPriests[i])  end
+    for i = 1, table.getn(otherPriests) do table.insert(fortProviders, otherPriests[i]) end
+    if table.getn(fortProviders) == 0 then
+        for i = 1, table.getn(shadowPriests) do table.insert(fortProviders, shadowPriests[i]) end
+    end
 
-    -- Pierre d'Âme : chaque démoniste en pose une sur un soigneur (rez de combat)
-    if table.getn(warlocks) > 0 then
+    -- Esprit Divin : prêtres Ombre en priorité (talents), sinon les heals
+    local spiritProviders = shadowPriests
+    if table.getn(spiritProviders) == 0 then spiritProviders = fortProviders end
+
+    if opts.fort   then splitAdd(fortProviders,   "Prayer of Fortitude") end
+    if opts.spirit then splitAdd(spiritProviders, "Prayer of Spirit")    end
+    if opts.motw   then splitAdd(druids,          "Gift of the Wild")    end
+    if opts.arcane then splitAdd(mages,           "Arcane Brilliance")   end
+
+    -- Soulstone : chaque démoniste en pose une sur un soigneur (rez de combat)
+    if opts.soulstone and table.getn(warlocks) > 0 then
         local ssTargets = {}
         for ti = 1, table.getn(out.healTank or {}) do
             local h = out.healTank[ti]
@@ -393,8 +429,8 @@ function RT_AA_AssignBuffs(analysis, out)
             table.insert(ssTargets, out.healRaid[i])
         end
         for i = 1, table.getn(warlocks) do
-            local tgt = ssTargets[i] or ssTargets[1] or "soigneur principal"
-            table.insert(out.buffs, { name=warlocks[i], buff="Pierre d'Âme", scope="sur "..tgt })
+            local tgt = ssTargets[i] or ssTargets[1] or "main healer"
+            table.insert(out.buffs, { name=warlocks[i], buff="Soulstone", scope="on "..tgt })
         end
     end
 
@@ -402,14 +438,16 @@ function RT_AA_AssignBuffs(analysis, out)
     -- 1 seul slot de malédiction par cible → chaque démoniste maintient
     -- UNE malédiction différente, jamais simultanées sur le boss.
     out.curses = {}
-    local WLOCK_CURSES = {
-        { curse="Maléd. des Éléments", why="+10% Feu/Givre (mages)" },
-        { curse="Maléd. de l'Ombre",  why="+10% Ombre/Arcane (shadow, démos)" },
-        { curse="Maléd. de Témérité", why="-640 armure (DPS physique)" },
-    }
-    for i = 1, table.getn(warlocks) do
-        local c = WLOCK_CURSES[i] or { curse="Maléd. d'Agonie", why="DoT" }
-        table.insert(out.curses, { name=warlocks[i], curse=c.curse, why=c.why })
+    if opts.curses then
+        local WLOCK_CURSES = {
+            { curse="Curse of the Elements",  why="+10% Fire/Frost (mages)" },
+            { curse="Curse of Shadow",        why="+10% Shadow/Arcane (shadow, locks)" },
+            { curse="Curse of Recklessness",  why="-640 armor (physical DPS)" },
+        }
+        for i = 1, table.getn(warlocks) do
+            local c = WLOCK_CURSES[i] or { curse="Curse of Agony", why="DoT" }
+            table.insert(out.curses, { name=warlocks[i], curse=c.curse, why=c.why })
+        end
     end
 
     return out
@@ -593,12 +631,12 @@ function RT_AA_AnnounceAll(out)
         end
     end
     if table.getn(healParts) > 0 then
-        send("[RT] Soins Tank: " .. table.concat(healParts, "  "))
+        send("[RT] Tank heals: " .. table.concat(healParts, "  "))
     end
 
     -- Heals raid
     if table.getn(out.healRaid or {}) > 0 then
-        send("[RT] Soins Raid: " .. table.concat(out.healRaid, ", "))
+        send("[RT] Raid heals: " .. table.concat(out.healRaid, ", "))
     end
 
     -- Buffs : 1 ligne par type (noms anglais), prêtres fusionnés sur 1 ligne
@@ -618,7 +656,7 @@ function RT_AA_AnnounceAll(out)
             else
                 for j = 1, table.getn(entries) do
                     local e = entries[j]
-                    if e.scope == "Raid entier" then
+                    if e.scope == "whole raid" or e.scope == "Raid entier" then
                         table.insert(parts, e.name)
                     else
                         table.insert(parts, e.scope .. "=" .. e.name)
@@ -640,8 +678,8 @@ function RT_AA_AnnounceAll(out)
         -- Cherche les clés Fort et DS parmi les buffs
         local fortKey, dsKey = nil, nil
         for _, k in ipairs(order) do
-            if string.find(k, "Forteresse") then fortKey = k end
-            if string.find(k, "Esprit")     then dsKey   = k end
+            if string.find(k, "Fortitude") or string.find(k, "Forteresse") then fortKey = k end
+            if string.find(k, "Spirit")    or string.find(k, "Esprit")     then dsKey   = k end
         end
         local priestMerged = fortKey and dsKey and sameProviders(byBuff[fortKey], byBuff[dsKey])
 
@@ -656,17 +694,18 @@ function RT_AA_AnnounceAll(out)
                     send("[RT] PW:Fort+D.Spirit: " .. table.concat(parts, " | "))
                     sent[fortKey] = true; sent[dsKey] = true
                 end
-            elseif string.find(k, "Pierre") then
+            elseif string.find(k, "Soulstone") or string.find(k, "Pierre") then
                 local parts = {}
                 for j = 1, table.getn(byBuff[k]) do
                     local e = byBuff[k][j]
-                    local tgt = string.gsub(e.scope or "", "^sur ", "")
+                    local tgt = string.gsub(e.scope or "", "^on ", "")
+                    tgt = string.gsub(tgt, "^sur ", "")
                     table.insert(parts, e.name .. ">" .. tgt)
                 end
                 send("[RT] Soulstone: " .. table.concat(parts, " | "))
-            elseif string.find(k, "Fauves") then
+            elseif string.find(k, "Wild") or string.find(k, "Fauves") then
                 send("[RT] MotW: " .. table.concat(buildParts(byBuff[k]), " | "))
-            elseif string.find(k, "Brillance") then
+            elseif string.find(k, "Brilliance") or string.find(k, "Brillance") then
                 send("[RT] Arc.Brill: " .. table.concat(buildParts(byBuff[k]), " | "))
             else
                 send("[RT] Buff: " .. table.concat(buildParts(byBuff[k]), " | "))
@@ -680,9 +719,11 @@ function RT_AA_AnnounceAll(out)
         for i = 1, table.getn(out.curses) do
             local c = out.curses[i]
             local cs
-            if string.find(c.curse, "ment") or string.find(c.curse, "lem") then cs = "CoE"
-            elseif string.find(c.curse, "Ombre") then cs = "CoS"
-            else cs = "CoR"
+            if string.find(c.curse, "Element") or string.find(c.curse, "lem") then cs = "CoE"
+            elseif string.find(c.curse, "Shadow") or string.find(c.curse, "Ombre") then cs = "CoS"
+            elseif string.find(c.curse, "Reck") or string.find(c.curse, "rit") then cs = "CoR"
+            elseif string.find(c.curse, "Agony") then cs = "CoA"
+            else cs = "Curse"
             end
             table.insert(cparts, cs .. "=" .. c.name)
         end
@@ -721,26 +762,26 @@ function RT_AA_WhisperPersonal(out)
 
         for ti = 1, table.getn(out.healTank or {}) do
             if out.healTank[ti] == e.name then
-                table.insert(tasks, "Soins MT" .. ti .. " (" .. (out.tanks[ti] or "?") .. ")")
+                table.insert(tasks, "Heal MT" .. ti .. " (" .. (out.tanks[ti] or "?") .. ")")
             end
         end
         for i2 = 1, table.getn(out.healRaid or {}) do
             if out.healRaid[i2] == e.name then
-                local t = "Soins Raid"
+                local t = "Raid heals"
                 if out.druidNote and string.find(out.druidNote, e.name, 1, true) then
-                    t = t .. " + HoTs sur " .. (out.tanks[1] or "MT1")
+                    t = t .. " + HoTs on " .. (out.tanks[1] or "MT1")
                 end
                 table.insert(tasks, t)
             end
         end
         for bi = 1, table.getn(out.buffs or {}) do
             if out.buffs[bi].name == e.name then
-                table.insert(tasks, out.buffs[bi].buff)
+                table.insert(tasks, out.buffs[bi].buff .. (out.buffs[bi].scope and (" (" .. out.buffs[bi].scope .. ")") or ""))
             end
         end
         for ci = 1, table.getn(out.curses or {}) do
             if out.curses[ci].name == e.name then
-                table.insert(tasks, "Maléd: " .. out.curses[ci].curse)
+                table.insert(tasks, "Curse: " .. out.curses[ci].curse)
             end
         end
 

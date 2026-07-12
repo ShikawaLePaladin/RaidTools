@@ -361,7 +361,8 @@ end
 -- fenêtre de post rapide, préview locale, tactiques custom.
 -- ============================================================
 
-WB.tacSeen = {}   -- boss déjà suggérés cette session (anti-spam)
+WB.tacSeen      = {}   -- boss déjà suggérés cette session (anti-spam)
+WB.tacCollapsed = {}   -- raids repliés dans la fenêtre Tactics
 
 -- Tactique correspondant à la cible courante (hostile, vivante) — match exact.
 function WB.tacDetect()
@@ -493,12 +494,18 @@ function WB.tacOpen(preselect)
             fillRow = function(row, item)
                 local fs = row:GetFontString()
                 if item.type == "header" then
-                    row:SetText("|cffFFD700" .. (item.raid or "?") .. "|r")
-                    row:EnableMouse(false)
+                    local mark = WB.tacCollapsed[item.raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                    row:SetText(mark .. "|cffFFD700" .. (item.raid or "?") .. "|r")
+                    row:EnableMouse(true)
                     local nt = row:GetNormalTexture()
                     local ht = row:GetHighlightTexture()
                     if nt then nt:SetAlpha(0) end
-                    if ht then ht:SetAlpha(0) end
+                    if ht then ht:SetAlpha(0.4) end
+                    local rname = item.raid
+                    row:SetScript("OnClick", function()
+                        WB.tacCollapsed[rname] = not WB.tacCollapsed[rname]
+                        if WB.tacFrame and WB.tacFrame._refreshList then WB.tacFrame._refreshList() end
+                    end)
                 else
                     row:SetText("  " .. (item.boss or "?"))
                     row:EnableMouse(true)
@@ -530,9 +537,11 @@ function WB.tacOpen(preselect)
                 table.sort(order)
                 for ri = 1, table.getn(order) do
                     table.insert(items, { type = "header", raid = order[ri] })
-                    local bosses = byRaid[order[ri]]
-                    table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
-                    for bi = 1, table.getn(bosses) do table.insert(items, bosses[bi]) end
+                    if not WB.tacCollapsed[order[ri]] then
+                        local bosses = byRaid[order[ri]]
+                        table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
+                        for bi = 1, table.getn(bosses) do table.insert(items, bosses[bi]) end
+                    end
                 end
             else
                 items = all

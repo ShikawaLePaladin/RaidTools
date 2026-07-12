@@ -61,6 +61,10 @@ RT.Modules.Register({
         scroll:SetWidth(300)
         scroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
 
+        -- Sections repliables : clic sur un en-tête de raid = replier/déplier
+        local collapsed   = {}
+        local refreshList -- forward (les closures des headers la capturent)
+
         local list = RT.UI.List(child, {
             rowHeight = 18, gap = 1,
             makeRow = function(l)
@@ -73,14 +77,19 @@ RT.Modules.Register({
             fillRow = function(row, item)
                 local fs = row:GetFontString()
                 if item.type == "header" then
-                    row:SetText("|cffFFD700" .. (item.raid or "?") .. "|r")
+                    local mark = collapsed[item.raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                    row:SetText(mark .. "|cffFFD700" .. (item.raid or "?") .. "|r")
                     if fs then fs:SetJustifyH("LEFT") end
-                    row:EnableMouse(false)
-                    row:SetScript("OnClick", nil)
+                    row:EnableMouse(true)
                     local nt = row:GetNormalTexture()
                     local ht = row:GetHighlightTexture()
                     if nt then nt:SetAlpha(0) end
-                    if ht then ht:SetAlpha(0) end
+                    if ht then ht:SetAlpha(0.4) end
+                    local rname = item.raid
+                    row:SetScript("OnClick", function()
+                        collapsed[rname] = not collapsed[rname]
+                        if refreshList then refreshList() end
+                    end)
                 else
                     row:SetText("  " .. (item.boss or "?"))
                     if fs then fs:SetJustifyH("LEFT") end
@@ -100,7 +109,7 @@ RT.Modules.Register({
         list:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
         list:SetWidth(280)
 
-        local function refreshList()
+        refreshList = function()
             local query = search:GetText() or ""
             local items = {}
             if string.len(query) == 0 then
@@ -121,11 +130,13 @@ RT.Modules.Register({
                 for ri = 1, table.getn(order) do
                     local r = order[ri]
                     table.insert(items, { type="header", raid=r })
-                    local bosses = byRaid[r]
-                    table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
-                    for bi = 1, table.getn(bosses) do
-                        local t = bosses[bi]
-                        table.insert(items, { type="boss", boss=t.boss, raid=t.raid, lines=t.lines })
+                    if not collapsed[r] then
+                        local bosses = byRaid[r]
+                        table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
+                        for bi = 1, table.getn(bosses) do
+                            local t = bosses[bi]
+                            table.insert(items, { type="boss", boss=t.boss, raid=t.raid, lines=t.lines })
+                        end
                     end
                 end
             else
@@ -139,7 +150,7 @@ RT.Modules.Register({
             list:SetItems(items)
             child:SetHeight(list:GetHeight() or 1)
         end
-        search:SetScript("OnTextChanged", refreshList)
+        search:SetScript("OnTextChanged", function() refreshList() end)
         panel._refreshList = refreshList
 
         -- ── Droite : aperçu + post ──

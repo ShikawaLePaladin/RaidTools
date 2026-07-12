@@ -136,8 +136,14 @@ function RT.UI.TextScroll(parent, opts)
     function api:SetText(t)
         self.fs:SetText(t or "")
         self.child:SetHeight((self.fs:GetHeight() or 1) + 20)
-        local f2, c2 = self.fs, self.child
-        RT.After(0, function() c2:SetHeight((f2:GetHeight() or 1) + 20) end)
+        -- Nouveau contenu : revient en haut et resynchronise la range,
+        -- sinon la vue peut rester "scrollée" au-delà du texte.
+        self.scroll:SetVerticalScroll(0)
+        local f2, c2, s2 = self.fs, self.child, self.scroll
+        RT.After(0, function()
+            c2:SetHeight((f2:GetHeight() or 1) + 20)
+            if s2.UpdateScrollChildRect then s2:UpdateScrollChildRect() end
+        end)
     end
     return api
 end

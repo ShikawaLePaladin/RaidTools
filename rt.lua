@@ -11389,6 +11389,8 @@ end
 
 
 
+
+
 -- ============================================================
 -- RT v3 (integre dans rt.lua) - /rt v3 pour ouvrir
 -- ============================================================
@@ -11932,8 +11934,14 @@ function RT.UI.TextScroll(parent, opts)
     function api:SetText(t)
         self.fs:SetText(t or "")
         self.child:SetHeight((self.fs:GetHeight() or 1) + 20)
-        local f2, c2 = self.fs, self.child
-        RT.After(0, function() c2:SetHeight((f2:GetHeight() or 1) + 20) end)
+        -- Nouveau contenu : revient en haut et resynchronise la range,
+        -- sinon la vue peut rester "scrollée" au-delà du texte.
+        self.scroll:SetVerticalScroll(0)
+        local f2, c2, s2 = self.fs, self.child, self.scroll
+        RT.After(0, function()
+            c2:SetHeight((f2:GetHeight() or 1) + 20)
+            if s2.UpdateScrollChildRect then s2:UpdateScrollChildRect() end
+        end)
     end
     return api
 end
@@ -13106,10 +13114,15 @@ RT.Modules.Register({
         local preview     -- forward ref
         local refreshMT   -- forward ref (zone tanks MT)
 
-        -- copyGroups=true → recopie les groupes calculés dans le preset Groupes
-        -- (Setup Raid / PUG). Calculer ne touche PAS aux groupes (préserve un
-        -- "Import Raid" fait manuellement dans l'onglet Groupes).
-        local function recompute(fn, copyGroups)
+        -- Les groupes ne sont recopiés dans l'onglet Groupes QUE si le toggle
+        -- "Groups: UPDATE" est actif (défaut KEEP : préserve un import Comp
+        -- Tool / un placement manuel).
+        local function wantCopyGroups()
+            local db = RT.Store.DB()
+            return db.v3assign_copygroups and true or false
+        end
+
+        local function recompute(fn)
             local n = 0
             for _ in pairs(RT.Store.Roster()) do n = n + 1 end
             if n == 0 then
@@ -13117,7 +13130,8 @@ RT.Modules.Register({
                 return
             end
             if fn then fn() end
-            if copyGroups then applyAssignToGroups() end
+            if wantCopyGroups() then applyAssignToGroups()
+            else RT.Print("|cff888888[Assign] Groups kept as-is (toggle 'Groups: KEEP' to change).|r") end
             applyAssignToBossDefault()
             if refreshMT then refreshMT() end
             if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
@@ -13134,11 +13148,11 @@ RT.Modules.Register({
                     local n = (GetNumRaidMembers and GetNumRaidMembers()) or 0
                     if n > 0 then RT.ScanRaid() end
                 end
-                -- 2. Calcule + applique (sans annoncer) + copie dans Groupes
-                recompute(RT_AA_PackGuild, true)
+                -- 2. Calcule + applique (sans annoncer)
+                recompute(RT_AA_PackGuild)
                 RT.Print("|cff88FF88[RT] Setup done — review and click Announce when ready.|r")
             end,
-            tooltip = "Scan raid → compute assignment → copy groups. Does NOT announce.",
+            tooltip = "Scan raid → compute assignment. Does NOT announce. Copies groups only if 'Groups: UPDATE'.",
         })
 
         -- Ligne 1 suite : boutons individuels
@@ -13146,8 +13160,8 @@ RT.Modules.Register({
             text = "Compute", width = 82, height = 24,
             color = { 0.20, 0.60, 0.30 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 142, -32 },
-            onClick = function() recompute(RT_AA_PackGuild, true) end,
-            tooltip = "Recomputes tanks/heals/buffs/groups and applies to Boss.",
+            onClick = function() recompute(RT_AA_PackGuild) end,
+            tooltip = "Recomputes tanks/heals/buffs and applies to Boss. Copies groups only if 'Groups: UPDATE'.",
         })
         RT.UI.Button(panel, {
             text = "Announce", width = 82, height = 24,
@@ -13163,23 +13177,85 @@ RT.Modules.Register({
             text = "PUG Pack", width = 82, height = 24,
             color = { 0.40, 0.70, 1.00 },
             anchor = { "TOPLEFT", panel, "TOPLEFT", 314, -32 },
-            onClick = function() recompute(RT_AA_PackPUG, true) end,
-            tooltip = "Compute + copy groups + announce + whisper each player (PUG mode).",
+            onClick = function() recompute(RT_AA_PackPUG) end,
+            tooltip = "Compute + announce + whisper each player (PUG mode). Copies groups only if 'Groups: UPDATE'.",
         })
         RT.UI.Button(panel, {
             text = "Whisper all", width = 82, height = 24,
             anchor = { "TOPLEFT", panel, "TOPLEFT", 400, -32 },
             onClick = function()
                 if RT_AA_LAST then RT_AA_WhisperPersonal(RT_AA_LAST)
-                else RT.Print("|cffFFAA00Calcule d'abord une attribution.|r") end
+                else RT.Print("|cffFFAA00Compute an assignment first.|r") end
             end,
             tooltip = "Whispers each player their role/group/healing.",
         })
 
+        -- Toggle : recopier (ou non) les groupes calculés dans l'onglet Groupes
+        local grpTgl = RT.UI.Button(panel, {
+            text = "Groups: KEEP", width = 108, height = 24,
+            color = { 0.30, 0.40, 0.55 },
+            anchor = { "TOPLEFT", panel, "TOPLEFT", 486, -32 },
+            tooltip = "KEEP (default): Compute/Setup never touch the Groups tab — your Comp Tool import or manual placement is preserved. UPDATE: computed groups overwrite the active preset.",
+        })
+        local function grpTglPaint()
+            local db  = RT.Store.DB()
+            local tex = grpTgl:GetNormalTexture()
+            if db.v3assign_copygroups then
+                grpTgl:SetText("Groups: UPDATE")
+                if tex then tex:SetVertexColor(0.60, 0.35, 0.10) end
+            else
+                grpTgl:SetText("Groups: KEEP")
+                if tex then tex:SetVertexColor(0.30, 0.40, 0.55) end
+            end
+        end
+        grpTgl:SetScript("OnClick", function()
+            local db = RT.Store.DB()
+            db.v3assign_copygroups = not db.v3assign_copygroups
+            grpTglPaint()
+        end)
+        grpTglPaint()
+
+        -- ── Toggles de buffs (inclus/exclus des annonces et whispers) ──
+        local BUFF_TOGGLES = {
+            { key="fort",      label="Fortitude" },
+            { key="spirit",    label="Spirit"    },
+            { key="motw",      label="MotW"      },
+            { key="arcane",    label="Arc.Int"   },
+            { key="soulstone", label="Soulstone" },
+            { key="curses",    label="Curses"    },
+        }
+        local bl = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+        bl:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -64)
+        bl:SetText("|cff69CCF0Buffs:|r")
+        for i = 1, table.getn(BUFF_TOGGLES) do
+            local t = BUFF_TOGGLES[i]
+            local b = RT.UI.Button(panel, {
+                text = t.label, width = 74, height = 18,
+                anchor = { "TOPLEFT", panel, "TOPLEFT", 54 + (i-1)*78, -61 },
+                tooltip = "Green = included in assignments, announces and whispers. Red = disabled. Recompute after changing.",
+            })
+            local key = t.key
+            local function paintTgl()
+                local o = RT_AA_BuffOpts and RT_AA_BuffOpts() or {}
+                local tex = b:GetNormalTexture()
+                if tex then
+                    if o[key] then tex:SetVertexColor(0.15, 0.55, 0.20)
+                    else tex:SetVertexColor(0.50, 0.15, 0.10) end
+                end
+            end
+            b:SetScript("OnClick", function()
+                if not RT_AA_BuffOpts then return end
+                local o = RT_AA_BuffOpts()
+                o[key] = not o[key]
+                paintTgl()
+            end)
+            paintTgl()
+        end
+
         -- ── Zone éditable : TANKS + SOINS (attribution manuelle) ──
         local MT_MARK = { "Skull", "Cross", "Square", "Moon" }
         local helpFS = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-        helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -60)
+        helpFS:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -84)
         helpFS:SetText("|cff888888Click a filled slot = |cffFFD700select|r (green). Click another = |cffFFD700swap|r. Empty slot = type a name. Tanks → MT1 Skull · MT2 Cross · MT3 Square · MT4 Moon|r")
 
         local tankBoxes, htBoxes, hrBoxes = {}, {}, {}
@@ -13228,6 +13304,7 @@ RT.Modules.Register({
                             RT_AA_LAST[selSlot.store][selSlot.idx] = nameA
                             slotDeselect()
                             applyAssignToBossDefault()
+                            if refreshMT then refreshMT() end
                             if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
                         end
                     else
@@ -13263,6 +13340,7 @@ RT.Modules.Register({
                     RT_AA_LAST[sl.store] = RT_AA_LAST[sl.store] or {}
                     RT_AA_LAST[sl.store][sl.idx] = name
                     applyAssignToBossDefault()
+                    if refreshMT then refreshMT() end
                     if preview then preview:SetText(fmtAssignment(RT_AA_LAST)) end
                 end
                 RT3_ASSIGN_SLOT = nil
@@ -13271,9 +13349,9 @@ RT.Modules.Register({
             timeout     = 0, whileDead = 1, hideOnEscape = 1,
         }
 
-        tankBoxes = mkBoxes(-78,  "Tanks",  "|cffFF7777", "tanks",    true)
-        htBoxes   = mkBoxes(-102, "T.Heal", "|cff66DD66", "healTank", false)
-        hrBoxes   = mkBoxes(-126, "S.Raid", "|cff66DD66", "healRaid", false)
+        tankBoxes = mkBoxes(-102, "Tanks",  "|cffFF7777", "tanks",    true)
+        htBoxes   = mkBoxes(-126, "T.Heal", "|cff66DD66", "healTank", false)
+        hrBoxes   = mkBoxes(-150, "H.Raid", "|cff66DD66", "healRaid", false)
 
         local function applySlotColor(btn, name)
             local fs = btn:GetFontString()
@@ -13302,8 +13380,8 @@ RT.Modules.Register({
 
         preview = RT.UI.TextScroll(panel, {
             name = "RT3_AssignPreview",
-            anchor = { "TOPLEFT", panel, "TOPLEFT", 8, -152 },
-            width = 690, height = 272, font = "GameFontHighlightSmall",
+            anchor = { "TOPLEFT", panel, "TOPLEFT", 8, -176 },
+            width = 690, height = 248, font = "GameFontHighlightSmall",
         })
         preview.scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 8)
         panel._preview = preview
@@ -13388,6 +13466,10 @@ RT.Modules.Register({
         scroll:SetWidth(300)
         scroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
 
+        -- Sections repliables : clic sur un en-tête de raid = replier/déplier
+        local collapsed   = {}
+        local refreshList -- forward (les closures des headers la capturent)
+
         local list = RT.UI.List(child, {
             rowHeight = 18, gap = 1,
             makeRow = function(l)
@@ -13400,14 +13482,19 @@ RT.Modules.Register({
             fillRow = function(row, item)
                 local fs = row:GetFontString()
                 if item.type == "header" then
-                    row:SetText("|cffFFD700" .. (item.raid or "?") .. "|r")
+                    local mark = collapsed[item.raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                    row:SetText(mark .. "|cffFFD700" .. (item.raid or "?") .. "|r")
                     if fs then fs:SetJustifyH("LEFT") end
-                    row:EnableMouse(false)
-                    row:SetScript("OnClick", nil)
+                    row:EnableMouse(true)
                     local nt = row:GetNormalTexture()
                     local ht = row:GetHighlightTexture()
                     if nt then nt:SetAlpha(0) end
-                    if ht then ht:SetAlpha(0) end
+                    if ht then ht:SetAlpha(0.4) end
+                    local rname = item.raid
+                    row:SetScript("OnClick", function()
+                        collapsed[rname] = not collapsed[rname]
+                        if refreshList then refreshList() end
+                    end)
                 else
                     row:SetText("  " .. (item.boss or "?"))
                     if fs then fs:SetJustifyH("LEFT") end
@@ -13427,7 +13514,7 @@ RT.Modules.Register({
         list:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
         list:SetWidth(280)
 
-        local function refreshList()
+        refreshList = function()
             local query = search:GetText() or ""
             local items = {}
             if string.len(query) == 0 then
@@ -13448,11 +13535,13 @@ RT.Modules.Register({
                 for ri = 1, table.getn(order) do
                     local r = order[ri]
                     table.insert(items, { type="header", raid=r })
-                    local bosses = byRaid[r]
-                    table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
-                    for bi = 1, table.getn(bosses) do
-                        local t = bosses[bi]
-                        table.insert(items, { type="boss", boss=t.boss, raid=t.raid, lines=t.lines })
+                    if not collapsed[r] then
+                        local bosses = byRaid[r]
+                        table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
+                        for bi = 1, table.getn(bosses) do
+                            local t = bosses[bi]
+                            table.insert(items, { type="boss", boss=t.boss, raid=t.raid, lines=t.lines })
+                        end
                     end
                 end
             else
@@ -13466,7 +13555,7 @@ RT.Modules.Register({
             list:SetItems(items)
             child:SetHeight(list:GetHeight() or 1)
         end
-        search:SetScript("OnTextChanged", refreshList)
+        search:SetScript("OnTextChanged", function() refreshList() end)
         panel._refreshList = refreshList
 
         -- ── Droite : aperçu + post ──
@@ -14744,12 +14833,14 @@ RT.Modules.Register({
     build = function(panel)
 
         -- ── GAUCHE : liste boss par raid ─────────────────────────
+        -- Largeur 212 (et pas 232) : la scrollbar du template dépasse de
+        -- ~20 px À DROITE du cadre — elle doit rester hors du panneau détail (x=246).
         local listScroll, listChild = RT.UI.ScrollArea(panel, {
             name="RT3_BossListScroll",
             anchor={"TOPLEFT", panel, "TOPLEFT", 6, -10},
-            childWidth=220,
+            childWidth=200,
         })
-        listScroll:SetWidth(232)
+        listScroll:SetWidth(212)
         listScroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 6, 8)
 
         -- ── DROITE : panneau detail ───────────────────────────────
@@ -15295,15 +15386,20 @@ RT.Modules.Register({
         -- Pools de frames pour pouvoir reconstruire (ajout de trash)
         local hdrPool, btnPool = {}, {}
 
+        -- Sections repliables : clic sur un en-tête de raid = replier/déplier
+        local collapsed = {}
+
         local function getHdr(i)
             local hf = hdrPool[i]
             if not hf then
-                hf = CreateFrame("Frame", nil, listChild)
-                hf:SetWidth(218) hf:SetHeight(17)
+                hf = CreateFrame("Button", nil, listChild)
+                hf:SetWidth(198) hf:SetHeight(17)
                 local hbg = hf:CreateTexture(nil,"BACKGROUND")
                 hbg:SetAllPoints() hbg:SetTexture(0.10,0.08,0.15,0.95)
                 hf._fs = hf:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
                 hf._fs:SetPoint("LEFT", hf, "LEFT", 5, 0)
+                hf:EnableMouseWheel(true)
+                hf:SetScript("OnMouseWheel", function() RT3_FwdWheel(this, arg1) end)
                 hdrPool[i] = hf
             end
             return hf
@@ -15313,7 +15409,7 @@ RT.Modules.Register({
             local btn = btnPool[i]
             if not btn then
                 btn = CreateFrame("Button", nil, listChild, "UIPanelButtonTemplate")
-                btn:SetWidth(210) btn:SetHeight(16)
+                btn:SetWidth(190) btn:SetHeight(16)
                 local bfs = btn:GetFontString()
                 if bfs then bfs:SetJustifyH("LEFT"); bfs:SetPoint("LEFT",btn,"LEFT",4,0) end
                 btnPool[i] = btn
@@ -15349,10 +15445,17 @@ RT.Modules.Register({
                 local hf = getHdr(hi)
                 hf:ClearAllPoints()
                 hf:SetPoint("TOPLEFT", listChild, "TOPLEFT", 2, -y)
-                hf._fs:SetText("|cffFFD700"..raid.."|r")
+                local mark = collapsed[raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                hf._fs:SetText(mark .. "|cffFFD700" .. raid .. "|r")
+                local rname = raid
+                hf:SetScript("OnClick", function()
+                    collapsed[rname] = not collapsed[rname]
+                    buildBossList()
+                end)
                 hf:Show()
                 y = y + 19
 
+                if not collapsed[raid] then
                 -- Boss (depuis les tactiques)
                 local bosses = grps[raid] or {}
                 for bi = 1, table.getn(bosses) do
@@ -15399,6 +15502,7 @@ RT.Modules.Register({
                 end
 
                 y = y + 4
+                end -- not collapsed
             end
             listChild:SetHeight(y + 4)
         end
@@ -16058,7 +16162,8 @@ end
 -- fenêtre de post rapide, préview locale, tactiques custom.
 -- ============================================================
 
-WB.tacSeen = {}   -- boss déjà suggérés cette session (anti-spam)
+WB.tacSeen      = {}   -- boss déjà suggérés cette session (anti-spam)
+WB.tacCollapsed = {}   -- raids repliés dans la fenêtre Tactics
 
 -- Tactique correspondant à la cible courante (hostile, vivante) — match exact.
 function WB.tacDetect()
@@ -16190,12 +16295,18 @@ function WB.tacOpen(preselect)
             fillRow = function(row, item)
                 local fs = row:GetFontString()
                 if item.type == "header" then
-                    row:SetText("|cffFFD700" .. (item.raid or "?") .. "|r")
-                    row:EnableMouse(false)
+                    local mark = WB.tacCollapsed[item.raid] and "|cff888888[+]|r " or "|cffAA8800[-]|r "
+                    row:SetText(mark .. "|cffFFD700" .. (item.raid or "?") .. "|r")
+                    row:EnableMouse(true)
                     local nt = row:GetNormalTexture()
                     local ht = row:GetHighlightTexture()
                     if nt then nt:SetAlpha(0) end
-                    if ht then ht:SetAlpha(0) end
+                    if ht then ht:SetAlpha(0.4) end
+                    local rname = item.raid
+                    row:SetScript("OnClick", function()
+                        WB.tacCollapsed[rname] = not WB.tacCollapsed[rname]
+                        if WB.tacFrame and WB.tacFrame._refreshList then WB.tacFrame._refreshList() end
+                    end)
                 else
                     row:SetText("  " .. (item.boss or "?"))
                     row:EnableMouse(true)
@@ -16227,9 +16338,11 @@ function WB.tacOpen(preselect)
                 table.sort(order)
                 for ri = 1, table.getn(order) do
                     table.insert(items, { type = "header", raid = order[ri] })
-                    local bosses = byRaid[order[ri]]
-                    table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
-                    for bi = 1, table.getn(bosses) do table.insert(items, bosses[bi]) end
+                    if not WB.tacCollapsed[order[ri]] then
+                        local bosses = byRaid[order[ri]]
+                        table.sort(bosses, function(a, b) return (a.boss or "") < (b.boss or "") end)
+                        for bi = 1, table.getn(bosses) do table.insert(items, bosses[bi]) end
+                    end
                 end
             else
                 items = all
