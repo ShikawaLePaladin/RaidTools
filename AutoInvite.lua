@@ -19,6 +19,18 @@ local AI_RETRY_INTERVAL = 30   -- secondes entre deux tentatives
 local AI_MAX_TRIES      = 10   -- ~5 min de retries avant abandon
 local AI_LastRetry      = 0
 
+-- Corrèle un message système "already in a group" avec la dernière
+-- invite envoyée (RT_BTrim est local à rt.lua, donc invisible ici —
+-- on trim nous-mêmes plutôt que de dépendre d'un global qui vaut nil).
+local AI_LastInvite = { name = nil, time = 0 }
+
+local function AI_Trim(s)
+    s = s or ""
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    return s
+end
+
 local function AI_Whisper(target, text)
     local lang = GetDefaultLanguage and GetDefaultLanguage("player") or nil
     pcall(SendChatMessage, "[RT] " .. text, "WHISPER", lang, target)
@@ -41,12 +53,14 @@ end
 function RT_AI.DoInvite(name)
     AI_PENDING[name] = AI_PENDING[name] or { tries = 0 }
     AI_PENDING[name].tries = AI_PENDING[name].tries + 1
+    AI_LastInvite.name = name
+    AI_LastInvite.time = GetTime and GetTime() or 0
     pcall(InviteUnit or InviteByName, name)
 end
 
 -- ── Démarre l'auto-invite ──────────────────────────────────
 function RT_AI.Start(keyword, maxPlayers)
-    AI_KEYWORD = string.lower(RT_BTrim and RT_BTrim(keyword or "inv") or (keyword or "inv"))
+    AI_KEYWORD = string.lower(AI_Trim(keyword or "inv"))
     AI_MAX     = tonumber(maxPlayers) or 40
     AI_ACTIVE  = true
     AI_QUEUE   = {}
@@ -74,7 +88,7 @@ function RT_AI.OnWhisper(sender, message)
     if not AI_ACTIVE then return end
     if not sender or sender == "" then return end
 
-    local msg = string.lower(RT_BTrim and RT_BTrim(message) or message)
+    local msg = string.lower(AI_Trim(message))
     -- '+1' = "je suis libre maintenant, réinvite-moi" (joueur qui était groupé)
     if msg ~= AI_KEYWORD and msg ~= "+1" then return end
 
@@ -131,20 +145,36 @@ AI_SysFrame:SetScript("OnEvent", function()
     if not AI_ACTIVE then return end
     local m = arg1 or ""
 
-    -- EN "X is already in a group." / FR "X est déjà dans un groupe."
-    local _, _, who = string.find(m, "^(%S+) is already in a group")
-    if not who then _, _, who = string.find(m, "^(%S+) est d.j. dans un groupe") end
-    if who and AI_INVITED[who] then
-        local p = AI_PENDING[who] or { tries = 0 }
-        AI_PENDING[who] = p
-        p.grouped = true
-        if not p.groupedMsgSent then
-            p.groupedMsgSent = true
-            AI_Whisper(who, "You're currently in another group. Reply '+1' (or '"
-                .. AI_KEYWORD .. "') when you're free and I'll re-invite you.")
-            RT_Print("|cffFFAA00[AI]|r " .. who .. " is already grouped — asked to reply '+1' when free.")
+    -- Message "déjà dans un groupe" : le texte exact varie selon serveur/version,
+    -- donc on essaie plusieurs formes ET on corrèle avec la dernière invite
+    -- envoyée (nom+heure) si l'extraction du nom échoue.
+    local isGrouped = string.find(m, "already in a group", 1, true)
+                    or string.find(m, "already in a raid", 1, true)
+                    or string.find(m, "d.j. dans un groupe")
+    if isGrouped then
+        local _, _, who = string.find(m, "^(%S+) is already in a")   -- ancré début de ligne
+        if not who then _, _, who = string.find(m, "(%S+) is already in a") end -- n'importe où
+        if not who then _, _, who = string.find(m, "(%S+) est d.j. dans un groupe") end
+        if not (who and AI_INVITED[who]) then
+            -- Nom absent OU pas le nôtre (ex: texte custom serveur qui capture un
+            -- mot générique) : on corrèle avec la dernière invite envoyée (<3s).
+            local now = GetTime and GetTime() or 0
+            if AI_LastInvite.name and (now - AI_LastInvite.time) < 3 and AI_INVITED[AI_LastInvite.name] then
+                who = AI_LastInvite.name
+            end
         end
-        return
+        if who and AI_INVITED[who] then
+            local p = AI_PENDING[who] or { tries = 0 }
+            AI_PENDING[who] = p
+            p.grouped = true
+            if not p.groupedMsgSent then
+                p.groupedMsgSent = true
+                AI_Whisper(who, "You're currently in another group. Reply '+1' (or '"
+                    .. AI_KEYWORD .. "') as soon as you're free and I'll invite you right away.")
+                RT_Print("|cffFFAA00[AI]|r " .. who .. " is already grouped — asked to reply '+1' when free.")
+            end
+            return
+        end
     end
 
     -- EN "Cannot find player 'X'." (hors-ligne) → le retry le rattrapera au login
@@ -278,7 +308,7 @@ function RT_BuildUIAutoInvite(parent)
     kwEdit:SetText(RT_DB.ai.keyword or "inv")
     kwEdit:SetScript("OnEscapePressed", function() kwEdit:ClearFocus() end)
     kwEdit:SetScript("OnEnterPressed", function()
-        RT_DB.ai.keyword = RT_BTrim and RT_BTrim(kwEdit:GetText()) or kwEdit:GetText()
+        RT_DB.ai.keyword = AI_Trim(kwEdit:GetText())
         kwEdit:ClearFocus()
     end)
 
@@ -308,7 +338,7 @@ function RT_BuildUIAutoInvite(parent)
     local sTex = startBtn:GetNormalTexture()
     if sTex then sTex:SetVertexColor(0.1, 0.7, 0.2) end
     startBtn:SetScript("OnClick", function()
-        local kw  = RT_BTrim and RT_BTrim(kwEdit:GetText()) or kwEdit:GetText()
+        local kw  = AI_Trim(kwEdit:GetText())
         local max = tonumber(maxEdit:GetText()) or 40
         RT_DB.ai.keyword    = kw
         RT_DB.ai.maxPlayers = max
@@ -380,7 +410,7 @@ function RT_BuildUIAutoInvite(parent)
     chanEdit:SetText(RT_DB.ai.lfmChannel or "SAY")
     chanEdit:SetScript("OnEscapePressed", function() chanEdit:ClearFocus() end)
     chanEdit:SetScript("OnEnterPressed", function()
-        RT_DB.ai.lfmChannel = string.upper(RT_BTrim and RT_BTrim(chanEdit:GetText()) or chanEdit:GetText())
+        RT_DB.ai.lfmChannel = string.upper(AI_Trim(chanEdit:GetText()))
         chanEdit:ClearFocus()
     end)
 
@@ -392,9 +422,9 @@ function RT_BuildUIAutoInvite(parent)
     announceBtn:SetText("Announce")
     announceBtn:SetScript("OnClick", function()
         local desc    = lfmEdit:GetText()
-        local channel = string.upper(RT_BTrim and RT_BTrim(chanEdit:GetText()) or chanEdit:GetText())
+        local channel = string.upper(AI_Trim(chanEdit:GetText()))
         local nRaid   = GetNumRaidMembers and GetNumRaidMembers() or 0
-        local kw      = RT_BTrim and RT_BTrim(kwEdit:GetText()) or kwEdit:GetText()
+        local kw      = AI_Trim(kwEdit:GetText())
         local msg = "[LFM] Raid " .. desc .. " — " .. nRaid .. "/" .. (tonumber(maxEdit:GetText()) or 40)
                   .. " — Whisper '" .. kw .. "' to join"
         pcall(SendChatMessage, msg, channel)
