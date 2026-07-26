@@ -81,7 +81,15 @@ function RT_AI.Stop()
     RT_AI.UpdateUI()
 end
 
-function RT_AI.IsActive() return AI_ACTIVE end
+function RT_AI.IsActive()  return AI_ACTIVE  end
+function RT_AI.GetQueue()  return AI_QUEUE   end
+function RT_AI.GetKeyword() return AI_KEYWORD end
+function RT_AI.GetMax()    return AI_MAX     end
+function RT_AI.GetPendingCount()
+    local n = 0
+    for _ in pairs(AI_PENDING) do n = n + 1 end
+    return n
+end
 
 -- ── Traitement d'un whisper entrant ───────────────────────
 function RT_AI.OnWhisper(sender, message)
@@ -247,12 +255,23 @@ function RT_AI.RemoveFromQueue(name)
 end
 
 -- ── Mise à jour UI ─────────────────────────────────────────
+-- Hooks externes (ex: le module v3Invite) prévenus à chaque changement
+-- d'état, en plus du rafraîchissement de l'ancien panneau v2 ci-dessous.
+RT_AI.UIHooks = RT_AI.UIHooks or {}
+function RT_AI.RegisterUIHook(fn)
+    if fn then table.insert(RT_AI.UIHooks, fn) end
+end
+
 function RT_AI.UpdateUI()
+    for i = 1, table.getn(RT_AI.UIHooks) do
+        pcall(RT_AI.UIHooks[i])
+    end
+
     local statusLabel = getglobal("RT_AIStatusLabel")
     if not statusLabel then return end
     if AI_ACTIVE then
-        statusLabel:SetText("|cff44FF44AutoInvite: ON|r  mot-clé: |cffFFD700" .. AI_KEYWORD
-            .. "|r  " .. table.getn(AI_QUEUE) .. " invité(s)")
+        statusLabel:SetText("|cff44FF44AutoInvite: ON|r  keyword: |cffFFD700" .. AI_KEYWORD
+            .. "|r  " .. table.getn(AI_QUEUE) .. " invited")
     else
         statusLabel:SetText("|cffAAAAAA AutoInvite: OFF|r")
     end
@@ -275,9 +294,9 @@ function RT_AI.UpdateUI()
 end
 
 -- ── Construit l'UI dans le panneau AutoInvite ──────────────
-function RT_BuildUIAutoInvite(parent)
-    local p = RT_CreatePanel and RT_CreatePanel("RT_Panel_Invite") or parent
-
+-- Défauts partagés : appelable depuis n'importe quel module (v2 ou v3)
+-- avant que le panneau v2 n'ait jamais été construit.
+function RT_AI.EnsureDB()
     RT_DB = RT_DB or {}
     RT_DB.ai = RT_DB.ai or {
         keyword          = "inv",
@@ -289,6 +308,12 @@ function RT_BuildUIAutoInvite(parent)
         retry30          = false,
     }
     if not RT_DB.ai.announceInterval then RT_DB.ai.announceInterval = 60 end
+    return RT_DB.ai
+end
+
+function RT_BuildUIAutoInvite(parent)
+    local p = RT_CreatePanel and RT_CreatePanel("RT_Panel_Invite") or parent
+    RT_AI.EnsureDB()
 
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -4)
