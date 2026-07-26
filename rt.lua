@@ -17154,6 +17154,26 @@ RT.Modules.Register({
         end)
         panel._invSpamBtn = spamBtn
 
+        local groupBtn = RT.UI.Button(panel, {
+            text = "Auto-place in Groups: OFF", width = 172, height = 20, color = { 0.40, 0.40, 0.40 },
+            anchor = { "LEFT", spamBtn, "RIGHT", 10, 0 },
+            tooltip = "When ON: as soon as an invited player actually joins the raid, their class is detected and they're auto-placed into the first free slot of the active Groups preset.",
+        })
+        groupBtn:SetScript("OnClick", function()
+            RT_AI.EnsureDB()
+            RT_DB.ai.autoGroup = not RT_DB.ai.autoGroup
+            local tex = groupBtn:GetNormalTexture()
+            if RT_DB.ai.autoGroup then
+                groupBtn:SetText("Auto-place in Groups: ON")
+                if tex then tex:SetVertexColor(0.10, 0.55, 0.15) end
+                RT.Print("|cff59BFF2[Invite]|r Auto-place ON: new joiners are placed in the first free Groups slot automatically.")
+            else
+                groupBtn:SetText("Auto-place in Groups: OFF")
+                if tex then tex:SetVertexColor(0.40, 0.40, 0.40) end
+            end
+        end)
+        panel._invGroupBtn = groupBtn
+
         -- ── Status + file d'invités ──────────────────────────────
         local status = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         status:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -130)
@@ -17238,6 +17258,16 @@ RT.Modules.Register({
                     if tex then tex:SetVertexColor(0.10, 0.55, 0.15) end
                 else
                     panel._invSpamBtn:SetText("Auto-spam: OFF")
+                    if tex then tex:SetVertexColor(0.40, 0.40, 0.40) end
+                end
+            end
+            if panel._invGroupBtn then
+                local tex = panel._invGroupBtn:GetNormalTexture()
+                if RT_DB.ai.autoGroup then
+                    panel._invGroupBtn:SetText("Auto-place in Groups: ON")
+                    if tex then tex:SetVertexColor(0.10, 0.55, 0.15) end
+                else
+                    panel._invGroupBtn:SetText("Auto-place in Groups: OFF")
                     if tex then tex:SetVertexColor(0.40, 0.40, 0.40) end
                 end
             end

@@ -214,6 +214,76 @@ AI_RetryFrame:SetScript("OnUpdate", function()
     end
 end)
 
+-- ── Lien avec Roster/Groups : dès qu'un joueur qu'on a invité apparaît
+-- vraiment dans le raid, on détecte sa classe (fiable, via GetRaidRosterInfo)
+-- et, si l'option est activée, on le place dans le 1er slot libre du
+-- preset de groupes actif. AI_PLACED évite de refaire le traitement à
+-- chaque RAID_ROSTER_UPDATE (et de déplacer un joueur déjà repositionné
+-- manuellement par le raid leader).
+local AI_PLACED = {}   -- { [name] = true }
+
+local function AI_PlaceInGroup(name)
+    RT_DB = RT_DB or {}
+    if not RT_DB.v3grppresets then
+        local gs = {}
+        for g = 1, 8 do gs[g] = { names = {}, role = 1 } end
+        RT_DB.v3grppresets = { active = 1, presets = { [1] = { name = "Preset 1", groups = gs } } }
+    end
+    local pd  = RT_DB.v3grppresets
+    local act = pd.active or 1
+    local preset = pd.presets[act]
+    if not preset then
+        local gs = {}
+        for g = 1, 8 do gs[g] = { names = {}, role = 1 } end
+        preset = { name = "Preset " .. act, groups = gs }
+        pd.presets[act] = preset
+    end
+    preset.groups = preset.groups or {}
+    for g = 1, 8 do
+        preset.groups[g] = preset.groups[g] or { names = {}, role = 1 }
+        preset.groups[g].names = preset.groups[g].names or {}
+        for s = 1, 5 do
+            if preset.groups[g].names[s] == name then
+                return false   -- déjà placé quelque part, on ne bouge rien
+            end
+        end
+    end
+    for g = 1, 8 do
+        for s = 1, 5 do
+            local cur = preset.groups[g].names[s]
+            if not cur or cur == "" then
+                preset.groups[g].names[s] = name
+                if RT and RT.Store and RT.Store.Notify then RT.Store.Notify("groups") end
+                return true
+            end
+        end
+    end
+    return false   -- plus aucune place libre
+end
+
+local AI_RosterFrame = CreateFrame("Frame", "RT_AIRosterFrame")
+AI_RosterFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+AI_RosterFrame:SetScript("OnEvent", function()
+    local n = GetNumRaidMembers and GetNumRaidMembers() or 0
+    if n == 0 then return end
+    local bd = RT_AI.EnsureDB()
+    for i = 1, n do
+        local name, _, _, _, class = GetRaidRosterInfo(i)
+        if name and AI_INVITED[name] and not AI_PLACED[name] then
+            AI_PLACED[name] = true
+            RT_DB.roster = RT_DB.roster or {}
+            local entry = RT_DB.roster[name] or { role = "DPS", sr = 0 }
+            if class and class ~= "" and (not entry.class or entry.class == "") then
+                entry.class = class
+            end
+            RT_DB.roster[name] = entry
+            if RT3_AutofixRoster then RT3_AutofixRoster() end
+            if RT and RT.Store and RT.Store.Notify then RT.Store.Notify("roster") end
+            if bd.autoGroup then AI_PlaceInGroup(name) end
+        end
+    end
+end)
+
 -- ── Frame whisper listener ─────────────────────────────────
 local AI_ListenFrame = CreateFrame("Frame", "RT_AIListenFrame", UIParent)
 AI_ListenFrame:RegisterEvent("CHAT_MSG_WHISPER")
@@ -306,8 +376,10 @@ function RT_AI.EnsureDB()
         autoAnnounce     = false,
         announceInterval = 60,
         retry30          = false,
+        autoGroup        = false,
     }
     if not RT_DB.ai.announceInterval then RT_DB.ai.announceInterval = 60 end
+    if RT_DB.ai.autoGroup == nil then RT_DB.ai.autoGroup = false end
     return RT_DB.ai
 end
 
