@@ -185,21 +185,22 @@ AI_ListenFrame:SetScript("OnEvent", function(self, evName, a1, a2)
     RT_AI.OnWhisper(sender, message)
 end)
 
--- ── Announce LFM en boucle ─────────────────────────────────
-local AI_AnnounceInterval = 60
+-- ── Announce LFM en boucle (intervalle configurable en UI) ──
 local AI_LastAnnounce     = 0
 local AI_AnnounceFrame    = CreateFrame("Frame")
 AI_AnnounceFrame:SetScript("OnUpdate", function()
     if not AI_ACTIVE then return end
     if not (RT_DB and RT_DB.ai and RT_DB.ai.autoAnnounce) then return end
-    local now = GetTime and GetTime() or 0
-    if (now - AI_LastAnnounce) < AI_AnnounceInterval then return end
+    local now      = GetTime and GetTime() or 0
+    local interval = (RT_DB.ai and tonumber(RT_DB.ai.announceInterval)) or 60
+    if interval < 5 then interval = 5 end   -- floor anti-spam serveur
+    if (now - AI_LastAnnounce) < interval then return end
     AI_LastAnnounce = now
     local nRaid = GetNumRaidMembers and GetNumRaidMembers() or 0
     local channel = (RT_DB.ai and RT_DB.ai.lfmChannel) or "SAY"
     local msg = "[LFM] Raid " .. (RT_DB.ai and RT_DB.ai.lfmDesc or "")
               .. " — " .. nRaid .. "/" .. AI_MAX
-              .. " — MP '" .. AI_KEYWORD .. "' pour rejoindre"
+              .. " — Whisper '" .. AI_KEYWORD .. "' to join"
     pcall(SendChatMessage, msg, channel)
 end)
 
@@ -249,13 +250,15 @@ function RT_BuildUIAutoInvite(parent)
 
     RT_DB = RT_DB or {}
     RT_DB.ai = RT_DB.ai or {
-        keyword      = "inv",
-        maxPlayers   = 40,
-        lfmDesc      = "Molten Core",
-        lfmChannel   = "SAY",
-        autoAnnounce = false,
-        retry30      = false,
+        keyword          = "inv",
+        maxPlayers       = 40,
+        lfmDesc          = "Molten Core",
+        lfmChannel       = "SAY",
+        autoAnnounce     = false,
+        announceInterval = 60,
+        retry30          = false,
     }
+    if not RT_DB.ai.announceInterval then RT_DB.ai.announceInterval = 60 end
 
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -4)
@@ -393,24 +396,77 @@ function RT_BuildUIAutoInvite(parent)
         local nRaid   = GetNumRaidMembers and GetNumRaidMembers() or 0
         local kw      = RT_BTrim and RT_BTrim(kwEdit:GetText()) or kwEdit:GetText()
         local msg = "[LFM] Raid " .. desc .. " — " .. nRaid .. "/" .. (tonumber(maxEdit:GetText()) or 40)
-                  .. " — MP '" .. kw .. "' pour rejoindre"
+                  .. " — Whisper '" .. kw .. "' to join"
         pcall(SendChatMessage, msg, channel)
     end)
 
+    -- Auto-spam toggle + intervalle configurable (répète l'annonce LFM toutes les N secondes)
+    local spamLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    spamLabel:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -74)
+    spamLabel:SetText("Repeat every")
+
+    local intervalEdit = CreateFrame("EditBox", "RT_AIIntervalEdit", p, "InputBoxTemplate")
+    intervalEdit:SetPoint("LEFT", spamLabel, "RIGHT", 6, 0)
+    intervalEdit:SetWidth(40)
+    intervalEdit:SetHeight(20)
+    intervalEdit:SetAutoFocus(false)
+    intervalEdit:SetText(tostring(RT_DB.ai.announceInterval or 60))
+    intervalEdit:SetScript("OnEscapePressed", function() intervalEdit:ClearFocus() end)
+    intervalEdit:SetScript("OnEnterPressed", function()
+        local v = tonumber(intervalEdit:GetText()) or 60
+        if v < 5 then v = 5 end
+        RT_DB.ai.announceInterval = v
+        intervalEdit:SetText(tostring(v))
+        intervalEdit:ClearFocus()
+    end)
+
+    local secLabel = p:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    secLabel:SetPoint("LEFT", intervalEdit, "RIGHT", 4, 0)
+    secLabel:SetText("sec")
+
+    local spamBtn = CreateFrame("Button", "RT_AISpamBtn", p, "UIPanelButtonTemplate")
+    spamBtn:SetPoint("LEFT", secLabel, "RIGHT", 10, 0)
+    spamBtn:SetWidth(110)
+    spamBtn:SetHeight(20)
+    local function spamPaint()
+        local tex = spamBtn:GetNormalTexture()
+        if RT_DB.ai.autoAnnounce then
+            spamBtn:SetText("Auto-spam: ON")
+            if tex then tex:SetVertexColor(0.1, 0.6, 0.2) end
+        else
+            spamBtn:SetText("Auto-spam: OFF")
+            if tex then tex:SetVertexColor(0.4, 0.4, 0.4) end
+        end
+    end
+    spamBtn:SetScript("OnClick", function()
+        -- valide l'intervalle tapé avant d'activer
+        local v = tonumber(intervalEdit:GetText()) or 60
+        if v < 5 then v = 5 end
+        RT_DB.ai.announceInterval = v
+        intervalEdit:SetText(tostring(v))
+        RT_DB.ai.autoAnnounce = not RT_DB.ai.autoAnnounce
+        AI_LastAnnounce = 0   -- annonce immédiate au démarrage
+        spamPaint()
+        if RT_DB.ai.autoAnnounce then
+            RT_Print("|cff88CCFF[AI]|r Auto-spam ON: LFM message repeats every " .. v .. "s while AutoInvite is active.")
+        end
+    end)
+    spamPaint()
+
     -- Status
     local statusLabel = p:CreateFontString("RT_AIStatusLabel", "OVERLAY", "GameFontHighlightSmall")
-    statusLabel:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -78)
+    statusLabel:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -102)
     statusLabel:SetWidth(720)
     statusLabel:SetJustifyH("LEFT")
     statusLabel:SetText("|cffAAAAAA AutoInvite: OFF|r")
 
     -- Liste des invités
     local queueTitle = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    queueTitle:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -96)
+    queueTitle:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -120)
     queueTitle:SetText("|cffCCCCCCInvite queue|r")
 
     local queueScroll = CreateFrame("ScrollFrame", "RT_AIQueueScroll", p, "UIPanelScrollFrameTemplate")
-    queueScroll:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -112)
+    queueScroll:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -136)
     queueScroll:SetWidth(700)
     queueScroll:SetHeight(280)
 
