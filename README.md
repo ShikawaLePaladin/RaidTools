@@ -74,6 +74,10 @@ rt/
 │── v3Consumes.lua      # Consumes tracker
 │── v3ModDash.lua       # Dashboard tab
 │── v3Minimap.lua       # Minimap button
+│── v3Attend.lua        # Présences & kills (surface RT_Attend, logique v2 inchangée)
+│── v3Loot.lua          # Historique de loot + SR+ (Soft Reserve points)
+│── v3Buffs.lua         # Assignation des buffs de classe pour le raid
+│── v3Invite.lua        # Auto-Invite : recrutement par mot-clé whisper (RT_AI)
 │
 │   (v2 base files — loaded before rt.lua)
 ├── Tactics.lua         # Boss strategy database (English, 100+ bosses)
@@ -91,6 +95,9 @@ rt/
 └── Config.lua          # Shared constants
 ```
 
+> ⚠️ `rebuild_rt.py` is not currently present in this repository. Until it's restored,
+> editing any `v3*.lua` file has no effect in-game — `rt.lua` is what actually loads.
+>
 > `rt.lua` is the compiled output of all `v3*.lua` source files concatenated by `rebuild_rt.py`.  
 > Edit the `v3*.lua` files, then run the script to rebuild.
 
