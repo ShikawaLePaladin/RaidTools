@@ -35,7 +35,7 @@ Les joueurs peuvent aussi télécharger la version Membre sur le site : **https:
 
 ## Comment ça marche ensemble
 
-1. L'officier prépare le plan de raid sur le site **[OctoFanRaid](https://octofan.vercel.app/raid/)** (roster, rôles, assignations par boss, schémas).
+1. L'officier prépare le plan de raid avec l'outil **[Raid](https://octofan.vercel.app/raid/)** du site OctoFan (roster, rôles, assignations par boss, schémas).
 2. Il l'importe dans son **RaidTools** (boutons « RaidTools » / « Fichier addon » du site, onglet OctoFan du jeu).
 3. Il clique **Envoyer** : le plan est relayé au raid. Seul le chef de raid ou un assistant peut envoyer, et chaque envoi est vérifié côté réception.
 4. Les joueurs qui ont **RaidTools Membre** le reçoivent tout seuls, sans rien importer : leur rôle, le schéma du boss et la stratégie s'affichent.
@@ -56,7 +56,7 @@ Commandes utiles : `/rt` (ouvre le panneau) · `/rtselftest` (auto-test) · `/rt
 
 - **Pas de base de stratégies intégrée.** Les stratégies de boss qui venaient de [Tactica](https://github.com/Player-Doite/tactica) (Player-Doite) ne sont **pas** livrées dans ces versions : la licence de Tactica n'autorise pas la redistribution sans l'accord de l'auteur. Le panneau *Tactics* démarre donc vide ; tu peux y ajouter tes propres tactiques, et les stratégies du plan reçu s'affichent normalement.
 - La **présence** (qui était là, à quel kill) n'est pas encore envoyée au site.
-- Les schémas et leurs images viennent du site OctoFanRaid ; seuls les boss de Molten Core ont une image pour l'instant.
+- Les schémas et leurs images viennent du site Raid ; seuls les boss de Molten Core ont une image pour l'instant.
 - Le code est écrit pour le client 1.12 ; il a été validé par simulation, pas sur tous les serveurs ni tous les réglages d'interface.
 
 ## Signaler un problème
