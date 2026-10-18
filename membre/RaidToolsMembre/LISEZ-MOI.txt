@@ -1,0 +1,29 @@
+RAIDTOOLS MEMBRE
+================
+
+INSTALLATION
+  1. Dézippe le dossier "RaidToolsMembre" dans  <ton jeu>\Interface\AddOns\
+  2. Relance le jeu (ou /reload). Un bouton épée apparaît sur la minimap.
+  Ne l'installe PAS à côté du RaidTools complet (dossier "rt") : la version Membre se désactive alors toute seule.
+
+CE QUE TU AS
+  - Page Raid (bouton minimap, ou /rtm) : le schéma du boss en grand, avec le nom des joueurs,
+    toutes les assignations (clic = cibler, clic droit = chuchoter), ton rôle, la stratégie et la préparation.
+    Boutons : < > boss précédent / suivant, P1 P2 P3 phases, Fond (image), Taille (grande / compacte), Lien (adresse du schéma).
+  - Deux overlays au choix (clic droit sur le bouton de la minimap) :
+      Récap     : ton nom, ton rôle, le boss courant, tes postes et tes tâches.
+      Mon rôle  : une pastille avec ton poste en gros et ta tâche.
+    Un seul à la fois, déplaçable à la souris, position mémorisée.
+
+LE PLAN
+  Tu n'as rien à importer : le chef de raid (ou un assistant) envoie le plan avec son RaidTools et il arrive tout seul.
+  Les schémas sont déjà inclus ; ceux que le chef envoie s'ajoutent.
+
+COMMANDES
+  /rtm            ouvre / ferme la page Raid
+  /rtm recap      overlay Récap (rappuie pour le couper)
+  /rtm role       overlay Mon rôle
+  /rtm off        aucun overlay
+  /rtm info       état du plan reçu
+  /rtm reset      efface ton plan local (à confirmer)
+  /rtmtest        auto-test de l'installation

@@ -1,0 +1,19 @@
+## Interface: 11200
+## Title: |cffAA66FFRaidTools|r |cff66CCFFMembre|r
+## Notes: Version membre de RaidTools : page Raid (schéma, assignations, stratégie), overlays Récap et Mon rôle (OctoWow / TurtleWoW 1.12)
+## Author: ShikawaLePaladin
+## Version: 5.1.0-membre
+## SavedVariables: RTM_DB
+## OptionalDeps: rt
+
+RTM_Core.lua
+RT_OctoFanData.lua
+RT_OctoFanSchemas.lua
+RT_BossImages.lua
+RTM_Schemas.lua
+OctoFanBridge.lua
+RT_SchemaView.lua
+RT_SchemaEdit.lua
+RTM_Overlays.lua
+RTM_Main.lua
+RTM_SelfTest.lua

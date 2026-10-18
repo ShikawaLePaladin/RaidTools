@@ -1,0 +1,35 @@
+## Interface: 11200
+## Title: |cffAA66FFRaidTools|r
+## Notes: Full raid management — roster, auto-roles, LFM, boss assignments, group optimiser (OctoWow / TurtleWoW 1.12)
+## Author: ShikawaLePaladin
+## Version: 5.0.0
+## SavedVariables: RT_DB
+
+rt.xml
+Colors.lua
+Config.lua
+BossPresets.lua
+SoftResJSON.lua
+Sync.lua
+AutoAssign.lua
+Overlay.lua
+PullTimer.lua
+CooldownTracker.lua
+AutoInvite.lua
+Tactics.lua
+Attendance.lua
+Dashboard.lua
+rt.lua
+RT4_Roles.lua
+RT4_Launcher.lua
+RT4_MicroMenu.lua
+RT4_RaidRecap.lua
+RT_BossImages.lua
+RT4_GuildPage.lua
+RT_SchemaView.lua
+RT_SchemaEdit.lua
+RT4_PugPage.lua
+RT_OctoFanData.lua
+RT_OctoFanSchemas.lua
+OctoFanBridge.lua
+RT4_SelfTest.lua

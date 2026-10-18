@@ -1,136 +1,93 @@
 # RaidTools
 
-> A full-featured raid management addon for WoW 1.12 (OctoWow / TurtleWoW)
+Addon de gestion de raid pour **WoW 1.12** (OctoWoW / TurtleWoW), en **deux versions** : une pour les officiers, une pour les joueurs.
 
-Covers everything needed to recruit, organise, and run a PUG raid — from LFM posting and spec detection to boss assignments and group optimisation.
+> ## ⚠️ BÊTA
+> **RaidTools 5 est en bêta.** Il passe des tests automatiques (une simulation de l'API WoW 1.12), mais il n'a pas encore été éprouvé en vrai raid par beaucoup de monde.
+> Attends-toi à des bugs d'affichage, des fonctions incomplètes et des changements d'une version à l'autre.
+> **La version Membre en particulier est toute récente.** Si quelque chose te semble cassé ou bizarre, ouvre un ticket dans l'onglet [Issues](../../issues) avec ce que tu as vu : c'est exactement ce qui aide à la stabiliser.
 
----
-
-## Features
-
-### Roster
-- Scan the current raid or import from SoftRes.it CSV
-- Auto-detect each player's spec via addon comms (silent for RaidTools users) or whisper fallback
-- One-click **Auto-roles** — sets Tank / Heal / Melee / Ranged from specs, requests missing specs automatically
-- Filter roster by role, search by name
-
-### WhisperBot (PUG hub)
-- Automated whisper replies: `?join`, `?role`, `?spec`, `?group`, `?mt`, `?strat`, `?comp`
-- Multi-channel **LFM posting** (Say / Yell / Guild / World / LFG) with slot tracking
-- **Comp announce** — broadcasts current group composition to raid
-- Spec request flow: RaidTools users reply silently via addon; everyone else gets a class-specific whisper  
-  *(e.g. Warrior → "What's your spec? (Arms / Fury / Prot)")*
-
-### Groups
-- Automatic group optimisation (Windfury groups, caster groups, heal groups)
-- Buff summary per group (Windfury, Devotion, LoTP, Trueshot Aura, Shadow Weaving…)
-- Manual drag-and-drop assignment, save/load presets
-
-### Boss Assignments
-- Per-boss tank / heal assignments with one-click raid announce
-- 100+ English boss strategies (Molten Core, BWL, ZG, AQ20/40, Naxxramas, World Bosses, OctoWow custom content)
-  — imported from [tactica](https://github.com/Player-Doite/tactica)
-- Inline strategy lookup via WhisperBot (`?strat`)
-
-### Other tabs
-| Tab | Description |
-|-----|-------------|
-| **Assign** | Auto-compute tank/heal/buff/curse assignments, whisper everyone |
-| **Consumes** | Track who brought consumes before the pull |
-| **Attendance** | Record kill history per boss |
-| **Loot** | SoftRes loot tracking |
-| **Dashboard** | Quick status overview + pull timer |
+*English summary at the bottom of this page.*
 
 ---
+
+## Quelle version installer ?
+
+| | **RaidTools — Officier** | **RaidTools Membre** |
+|---|---|---|
+| Pour qui | Chef de raid, assistants, officiers | Tous les joueurs du raid |
+| Dossier à installer | `rt` | `RaidToolsMembre` |
+| Commande | `/rt` (ou `/raidtool`) | `/rtm` (ou `/raidmembre`) |
+| Ce que tu peux faire | Tout : gérer le roster, les rôles, les groupes, les assignations, l'import du plan, **envoyer le plan au raid** | **Recevoir** le plan et le consulter : schéma du boss en grand, ton rôle, tes tâches, la stratégie |
+| Données sauvegardées | `RT_DB` | `RTM_DB` |
+
+**N'installe pas les deux ensemble** : si le dossier `rt` est présent, la version Membre se désactive toute seule.
 
 ## Installation
 
-1. Copy the `rt` folder into `WoW/Interface/AddOns/`
-2. Launch World of Warcraft
-3. Enable **RT - Raid Tool** in the addon list
-4. Type `/rt` to open the panel
+1. Télécharge le zip qui te correspond dans la page **[Releases](../../releases)** :
+   - `RaidTools-Officier-…zip` (contient le dossier `rt`)
+   - `RaidTools-Membre-…zip` (contient le dossier `RaidToolsMembre`)
+2. Dézippe le dossier dans `<ton jeu>\Interface\AddOns\`
+3. Relance le jeu (ou `/reload`).
+
+Les joueurs peuvent aussi télécharger la version Membre sur le site : **https://octofan.vercel.app/addon/**
+
+## Comment ça marche ensemble
+
+1. L'officier prépare le plan de raid sur le site **[OctoFanRaid](https://octofan.vercel.app/raid/)** (roster, rôles, assignations par boss, schémas).
+2. Il l'importe dans son **RaidTools** (boutons « RaidTools » / « Fichier addon » du site, onglet OctoFan du jeu).
+3. Il clique **Envoyer** : le plan est relayé au raid. Seul le chef de raid ou un assistant peut envoyer, et chaque envoi est vérifié côté réception.
+4. Les joueurs qui ont **RaidTools Membre** le reçoivent tout seuls, sans rien importer : leur rôle, le schéma du boss et la stratégie s'affichent.
+
+## Version Membre
+
+- **Page Raid** (bouton de la minimap ou `/rtm`) : le schéma du boss en grand avec le nom des joueurs, toutes les assignations (clic = cibler, clic droit = chuchoter), ton rôle, la stratégie.
+- **Deux overlays** au choix (clic droit sur le bouton de la minimap) : **Récap** (ton nom, ton rôle, le boss courant, tes tâches) ou **Mon rôle** (une pastille avec ton poste en gros).
+- Commandes : `/rtm` · `/rtm recap` · `/rtm role` · `/rtm off` · `/rtm info` (état du plan reçu) · `/rtm reset` (efface ton plan local) · `/rtmtest` (auto-test de l'installation).
+
+## Version Officier
+
+Le RaidTools complet : roster et détection des spécialisations, rôles automatiques, groupes optimisés (Windfury, casters, heals), assignations par boss, annonces de raid, auto-invite, recrutement (LFM), WhisperBot PUG, pull timer, suivi des consommables et du loot, plus la page Raid avec les schémas de boss et l'import / l'envoi du plan.
+
+Commandes utiles : `/rt` (ouvre le panneau) · `/rtselftest` (auto-test) · `/rtrelay` (état du relais du plan).
+
+## Limites connues (bêta)
+
+- **Pas de base de stratégies intégrée.** Les stratégies de boss qui venaient de [Tactica](https://github.com/Player-Doite/tactica) (Player-Doite) ne sont **pas** livrées dans ces versions : la licence de Tactica n'autorise pas la redistribution sans l'accord de l'auteur. Le panneau *Tactics* démarre donc vide ; tu peux y ajouter tes propres tactiques, et les stratégies du plan reçu s'affichent normalement.
+- La **présence** (qui était là, à quel kill) n'est pas encore envoyée au site.
+- Les schémas et leurs images viennent du site OctoFanRaid ; seuls les boss de Molten Core ont une image pour l'instant.
+- Le code est écrit pour le client 1.12 ; il a été validé par simulation, pas sur tous les serveurs ni tous les réglages d'interface.
+
+## Signaler un problème
+
+Ouvre un ticket dans **[Issues](../../issues)** en indiquant : la version (Officier ou Membre), ce que tu faisais, le message d'erreur s'il y en a un, et si tu avais d'autres addons actifs. `/rtselftest` (officier) ou `/rtmtest` (membre) donne un diagnostic rapide à coller dans le ticket.
+
+## Contenu du dépôt
+
+| Dossier | Contenu |
+|---|---|
+| `officier/rt` | L'addon complet pour les officiers |
+| `membre/RaidToolsMembre` | L'addon pour les joueurs |
+| `legacy-v3` | L'ancienne version 3 (juillet), conservée telle quelle pour mémoire |
+
+## Crédits et licence
+
+- Auteur : **ShikawaLePaladin**. Conçu pour [OctoWoW](https://octowow.com) / [TurtleWoW](https://turtle-wow.org) (WoW 1.12.1).
+- Le panneau *Tactics* et le recrutement LFM sont *inspirés de* **Tactica** (Player-Doite) ; aucun code ni contenu de Tactica n'est inclus dans les versions 5.
+- Les formats d'import Raid-Helper (Composition Tool / Sign-ups) et SoftRes.it sont lus tels quels ; ces services appartiennent à leurs auteurs.
+- **Aucune licence n'a encore été choisie** pour ce dépôt. Utilisation personnelle en jeu bienvenue ; pour toute autre réutilisation, demande d'abord.
 
 ---
 
-## File structure
+## English summary
 
-```
-rt/
-├── rt.toc              # Addon manifest (loads v2 base + rt.lua)
-├── rt.xml              # Minimal frame definition
-├── rt.lua              # Built v3 UI (generated — do not edit directly)
-│
-│── v3Compat.lua        # Spec detection, role mapping, shared helpers
-│── v3Store.lua         # SavedVariables wrapper
-│── v3UIKit.lua         # Shared widget factory (Button, EditBox…)
-│── v3Registry.lua      # Module tab system + Settings panel
-│── v3Roster.lua        # Roster tab
-│── v3WhisperBot.lua    # WhisperBot + LFM + comp announce
-│── v3Groups.lua        # Groups tab
-│── v3GroupOpt.lua      # Group optimiser algorithm
-│── v3Boss.lua          # Boss assignments tab
-│── v3Assign.lua        # Auto-assignment engine
-│── v3Strats.lua        # Boss strategy browser
-│── v3Consumes.lua      # Consumes tracker
-│── v3ModDash.lua       # Dashboard tab
-│── v3Minimap.lua       # Minimap button
-│── v3Attend.lua        # Présences & kills (surface RT_Attend, logique v2 inchangée)
-│── v3Loot.lua          # Historique de loot + SR+ (Soft Reserve points)
-│── v3Buffs.lua         # Assignation des buffs de classe pour le raid
-│── v3Invite.lua        # Auto-Invite : recrutement par mot-clé whisper (RT_AI)
-│
-│   (v2 base files — loaded before rt.lua)
-├── Tactics.lua         # Boss strategy database (English, 100+ bosses)
-├── Sync.lua            # Addon-to-addon messaging (RTSYNC prefix)
-├── AutoAssign.lua      # v2 assignment logic
-├── Dashboard.lua       # v2 dashboard
-├── Attendance.lua      # v2 attendance
-├── BossPresets.lua     # v2 boss presets
-├── SoftResJSON.lua     # SoftRes CSV parser
-├── AutoInvite.lua      # Auto-invite by class/role
-├── CooldownTracker.lua # Cooldown tracker
-├── Overlay.lua         # Raid overlay
-├── PullTimer.lua       # Pull countdown
-├── Colors.lua          # Class/role colour helpers
-└── Config.lua          # Shared constants
-```
+**RaidTools** is a raid-management addon for **WoW 1.12** (OctoWoW / TurtleWoW) in **two builds**:
 
-> ⚠️ `rebuild_rt.py` is not currently present in this repository. Until it's restored,
-> editing any `v3*.lua` file has no effect in-game — `rt.lua` is what actually loads.
->
-> `rt.lua` is the compiled output of all `v3*.lua` source files concatenated by `rebuild_rt.py`.  
-> Edit the `v3*.lua` files, then run the script to rebuild.
+- **Officer** (`rt`, `/rt`): the full tool — roster, auto-roles, groups, boss assignments, plan import and **sending the plan to the raid**.
+- **Member** (`RaidToolsMembre`, `/rtm`): players **receive** the plan automatically and see their role, the boss diagram and the strategy. Do not install both: the Member build disables itself if `rt` is loaded.
 
----
+**⚠️ This is a BETA.** It passes automated tests against a simulated 1.12 API but has not been proven in many real raids yet; the Member build is brand new. Please report problems in [Issues](../../issues).
 
-## Slash commands
-
-```
-/rt          Open / close the main panel
-/rt help     List available commands
-```
-
----
-
-## SavedVariables
-
-All data is stored in `RT_DB` (see `v3Store.lua`):
-
-```lua
-RT_DB = {
-    v3 = {
-        roster  = { ["PlayerName"] = { class, spec, role, sr } },
-        groups  = { [1..8] = { "Name", ... } },
-        bosses  = { ["BossName"] = { tanks, heals, note } },
-        loot    = { ... },
-        v3bot   = { enabled, templates, lfm, ... },
-    }
-}
-```
-
----
-
-## Credits
-
-- Boss strategies: [tactica](https://github.com/Player-Doite/tactica) by Player-Doite
-- Built for [OctoWow](https://octowow.com) / [TurtleWoW](https://turtle-wow.org) (WoW 1.12.1)
+Download the zips from [Releases](../../releases) (or the Member build from https://octofan.vercel.app/addon/), unzip into `Interface\AddOns\`, then `/reload`.
+The built-in boss strategy database that came from Tactica is **not** included (its license forbids redistribution without the author's permission); the Tactics panel starts empty and supports your own tactics. No license has been chosen yet.
