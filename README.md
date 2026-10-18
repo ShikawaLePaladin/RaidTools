@@ -31,7 +31,7 @@ Addon de gestion de raid pour **WoW 1.12** (OctoWoW / TurtleWoW), en **deux vers
 2. Dézippe le dossier dans `<ton jeu>\Interface\AddOns\`
 3. Relance le jeu (ou `/reload`).
 
-Les joueurs peuvent aussi télécharger la version Membre sur le site : **https://octofan.vercel.app/addon/**
+Les joueurs peuvent aussi télécharger la version Membre sur le site : **https://octofan.vercel.app/raidtools/**
 
 ## Comment ça marche ensemble
 
@@ -89,5 +89,5 @@ Ouvre un ticket dans **[Issues](../../issues)** en indiquant : la version (Offic
 
 **⚠️ This is a BETA.** It passes automated tests against a simulated 1.12 API but has not been proven in many real raids yet; the Member build is brand new. Please report problems in [Issues](../../issues).
 
-Download the zips from [Releases](../../releases) (or the Member build from https://octofan.vercel.app/addon/), unzip into `Interface\AddOns\`, then `/reload`.
+Download the zips from [Releases](../../releases) (or the Member build from https://octofan.vercel.app/raidtools/), unzip into `Interface\AddOns\`, then `/reload`.
 The built-in boss strategy database that came from Tactica is **not** included (its license forbids redistribution without the author's permission); the Tactics panel starts empty and supports your own tactics. No license has been chosen yet.
